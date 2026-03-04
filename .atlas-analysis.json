@@ -1,0 +1,152 @@
+{
+  "projectType": "framework",
+  "projectName": "Donkeycar",
+  "projectDescription": "A minimalist and modular Python framework for building self-driving robots with support for deep learning, computer vision, and GPS-based autonomy.",
+  "theme": "aspen",
+  "primaryColor": "#695751",
+  "lightColor": "#151515",
+  "darkColor": "#d7c4b8",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/vehicle-loop",
+              "concepts/parts",
+              "concepts/templates",
+              "concepts/memory"
+            ]
+          },
+          {
+            "group": "Building Your Car",
+            "pages": [
+              "guides/hardware-setup",
+              "guides/creating-application",
+              "guides/calibration",
+              "guides/driving"
+            ]
+          },
+          {
+            "group": "Training & Autopilots",
+            "pages": [
+              "training/overview",
+              "training/data-collection",
+              "training/deep-learning",
+              "training/computer-vision",
+              "training/gps-autopilot"
+            ]
+          },
+          {
+            "group": "Parts Reference",
+            "pages": [
+              "parts/overview",
+              "parts/cameras",
+              "parts/controllers",
+              "parts/actuators",
+              "parts/sensors",
+              "parts/keras-models",
+              "parts/pytorch-models",
+              "parts/data-stores",
+              "parts/custom-parts"
+            ]
+          },
+          {
+            "group": "Advanced Topics",
+            "pages": [
+              "advanced/simulator",
+              "advanced/kinematics",
+              "advanced/telemetry",
+              "advanced/path-following",
+              "advanced/lidar",
+              "advanced/3d-cameras"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CLI Reference",
+        "groups": [
+          {
+            "group": "Commands",
+            "pages": [
+              "cli/overview",
+              "cli/createcar",
+              "cli/calibrate",
+              "cli/train",
+              "cli/makemovie",
+              "cli/tubplot",
+              "cli/tubhist",
+              "cli/ui"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core API",
+            "pages": [
+              "api/vehicle",
+              "api/memory",
+              "api/config"
+            ]
+          },
+          {
+            "group": "Parts API",
+            "pages": [
+              "api/parts/camera",
+              "api/parts/controller",
+              "api/parts/actuator",
+              "api/parts/keras",
+              "api/parts/pytorch",
+              "api/parts/datastore",
+              "api/parts/gps",
+              "api/parts/lidar"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Modular part-based architecture for building autonomous vehicles",
+    "Multiple vehicle templates (complete, path_follow, cv_control, simulator)",
+    "Deep learning autopilot with TensorFlow and PyTorch support",
+    "Computer vision and GPS-based navigation",
+    "Built-in simulator for virtual testing and racing",
+    "Support for diverse hardware: Raspberry Pi, Jetson Nano, various cameras and sensors",
+    "Web-based UI for driving and configuration",
+    "Data collection and telemetry recording (Tub format)",
+    "Model training pipeline with augmentations",
+    "Pre-built parts for cameras, controllers, actuators, sensors, and more"
+  ],
+  "publicApiSurface": [
+    "Vehicle - Main vehicle loop class for building autonomous cars",
+    "Vehicle.add() - Add parts to the vehicle pipeline",
+    "Vehicle.start() - Start the vehicle drive loop",
+    "Memory - Shared memory for passing data between parts",
+    "donkey createcar - CLI command to create new car application",
+    "donkey train - CLI command to train autopilot models",
+    "donkey calibrate - CLI command to calibrate servos and motors",
+    "KerasPilot - Base class for deep learning autopilots",
+    "WebController - Web-based driving interface",
+    "CvCam - Camera part for capturing images",
+    "PCA9685 - Motor controller for steering and throttle",
+    "TubWriter - Data recording part",
+    "GPSPath - GPS-based path following",
+    "Lidar - Lidar sensor integration"
+  ]
+}
