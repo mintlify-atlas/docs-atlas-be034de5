@@ -1,80 +1,438 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick Start Guide
+description: Get from zero to a working autonomous car in minutes with this quick start guide
 ---
 
-## Get started in three steps
-
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+This guide will help you get started with Donkeycar quickly. You'll create a car application, configure it, and be ready for your first drive.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+This quick start assumes you have already built your Donkeycar hardware. If not, refer to the [hardware build guide](http://docs.donkeycar.com/guide/build_hardware/).
 </Note>
+
+## Prerequisites
+
+Before starting, ensure you have:
+- A Raspberry Pi, Jetson Nano, or PC/Mac with Donkeycar installed
+- Basic familiarity with the command line terminal
+- Your hardware assembled (for physical car)
+
+## Installation
+
+<Steps>
+
+### Install Donkeycar
+
+Choose the appropriate installation for your platform:
+
+<CodeGroup>
+```bash title="Raspberry Pi"
+pip install donkeycar[pi]
+```
+
+```bash title="Jetson Nano"
+pip install donkeycar[nano]
+```
+
+```bash title="PC/Mac"
+pip install donkeycar[pc]
+```
+
+```bash title="macOS with GPU"
+pip install donkeycar[macos]
+```
+</CodeGroup>
+
+<Tip>
+For PyTorch support, add the `torch` extra: `pip install donkeycar[pc,torch]`
+</Tip>
+
+### Verify Installation
+
+Verify that Donkeycar is installed correctly:
+
+```bash
+donkey --help
+```
+
+You should see the Donkey Car ASCII art and a list of available commands:
+
+```
+ ____   ___  _   _ _  _________   __  ____     _    ____
+|  _ \ / _ \| \ | | |/ / ____\ \ / / / ___|   / \  |  _ \
+| | | | | | |  \| | ' /|  _|  \ V / | |      / _ \ | |_) |
+| |_| | |_| | |\  | . \| |___  | |  | |___  / ___ \|  _ <
+|____/ \___/|_| \_|_|\_\_____| |_|   \____|/_/   \_\_| \_\
+
+using donkey v5.2.dev6 ...
+```
+
+</Steps>
+
+## Create Your Car Application
+
+<Steps>
+
+### Generate Car Folder
+
+Use the `donkey createcar` command to create a new car application:
+
+```bash
+donkey createcar --path ~/mycar
+```
+
+This creates a new directory with the following structure:
+
+```
+~/mycar/
+├── config.py          # Default configuration
+├── myconfig.py        # Your custom configuration
+├── manage.py          # Main car application
+├── train.py           # Training script
+├── calibrate.py       # Calibration script
+├── data/              # Recorded driving data
+├── models/            # Trained models
+└── logs/              # Log files
+```
+
+<Note>
+The `config.py` file contains all default settings. The `myconfig.py` file is where you override settings for your specific car.
+</Note>
+
+### Choose a Template
+
+Donkeycar provides several templates for different use cases. The default template is `complete`, which includes all features.
+
+To create a car with a specific template:
+
+```bash
+donkey createcar --path ~/mycar --template <template_name>
+```
+
+Available templates:
+- **complete** - Full-featured car with deep learning autopilot (default)
+- **basic** - Minimal configuration for simple cars
+- **path_follow** - GPS-based path following
+- **cv_control** - Computer vision control
+- **simulator** - For use with the Donkey Simulator
+
+### Navigate to Car Directory
+
+```bash
+cd ~/mycar
+```
+
+</Steps>
+
+## Basic Configuration
+
+<Steps>
+
+### Edit Your Configuration
+
+Open `myconfig.py` in a text editor:
+
+```bash
+nano myconfig.py
+```
+
+Uncomment and modify the settings you want to change. Here are the most common settings:
+
+```python title="myconfig.py"
+# Camera Configuration
+CAMERA_TYPE = "PICAM"  # Options: PICAM, WEBCAM, CVCAM, MOCK
+IMAGE_W = 160
+IMAGE_H = 120
+IMAGE_DEPTH = 3
+CAMERA_FRAMERATE = 20
+
+# Drive Train Type
+DRIVE_TRAIN_TYPE = "PWM_STEERING_THROTTLE"  # Standard RC car
+
+# Controller Type
+CONTROLLER_TYPE = 'xbox'  # Options: ps3, ps4, xbox, nimbus, wiiu
+USE_JOYSTICK_AS_DEFAULT = True
+JOYSTICK_MAX_THROTTLE = 0.5  # Limit speed for beginners
+
+# Drive Loop
+DRIVE_LOOP_HZ = 20  # How fast the main loop runs
+
+# Web Control
+WEB_CONTROL_PORT = 8887  # Port for web interface
+```
+
+<Tip>
+Start with `JOYSTICK_MAX_THROTTLE = 0.5` if you're a beginner. You can increase it as you get comfortable.
+</Tip>
+
+### Camera Selection
+
+<CodeGroup>
+```python title="Raspberry Pi Camera"
+CAMERA_TYPE = "PICAM"
+```
+
+```python title="USB Webcam"
+CAMERA_TYPE = "WEBCAM"
+CAMERA_INDEX = 0  # If you have multiple cameras
+```
+
+```python title="Testing without Camera"
+CAMERA_TYPE = "MOCK"
+```
+</CodeGroup>
+
+### Drive Train Configuration
+
+For a standard RC car with servo and ESC:
+
+```python
+DRIVE_TRAIN_TYPE = "PWM_STEERING_THROTTLE"
+
+# Configure your pins (Raspberry Pi GPIO)
+PWM_STEERING_THROTTLE = {
+    "PWM_STEERING_PIN": "RPI_GPIO.BOARD.33",
+    "PWM_STEERING_SCALE": 1.0,
+    "PWM_STEERING_INVERTED": False,
+    "STEERING_LEFT_PWM": 460,
+    "STEERING_RIGHT_PWM": 290,
+    "PWM_THROTTLE_PIN": "RPI_GPIO.BOARD.32",
+    "PWM_THROTTLE_SCALE": 1.0,
+    "PWM_THROTTLE_INVERTED": False,
+    "THROTTLE_FORWARD_PWM": 500,
+    "THROTTLE_STOPPED_PWM": 370,
+    "THROTTLE_REVERSE_PWM": 220,
+}
+```
+
+<Warning>
+You'll need to calibrate these PWM values for your specific hardware. See the calibration section below.
+</Warning>
+
+</Steps>
+
+## Calibrate Your Car
+
+Before your first drive, you need to calibrate the steering and throttle.
+
+<Steps>
+
+### Run Calibration Script
+
+```bash
+python calibrate.py
+```
+
+This starts a web server. Open your browser and navigate to:
+
+```
+http://raspberrypi.local:8887/calibrate
+```
+
+<Note>
+Replace `raspberrypi.local` with your car's hostname or IP address.
+</Note>
+
+### Find Your IP Address
+
+If you don't know your car's IP address:
+
+```bash
+donkey findcar
+```
+
+Or check directly:
+
+```bash
+hostname -I
+```
+
+### Calibrate Steering
+
+1. Use the web interface to adjust steering values
+2. Find the PWM value for full left turn
+3. Find the PWM value for full right turn
+4. Update these values in `myconfig.py`:
+
+```python
+STEERING_LEFT_PWM = 460   # Your calibrated left value
+STEERING_RIGHT_PWM = 290  # Your calibrated right value
+```
+
+### Calibrate Throttle
+
+1. Find the PWM value for stopped (usually around 370)
+2. Find the PWM value for maximum forward speed
+3. Find the PWM value for maximum reverse (if applicable)
+4. Update in `myconfig.py`:
+
+```python
+THROTTLE_FORWARD_PWM = 500
+THROTTLE_STOPPED_PWM = 370
+THROTTLE_REVERSE_PWM = 220
+```
+
+<Warning>
+Be careful when calibrating throttle! Your car may move suddenly. Have someone ready to catch it or prop up the wheels.
+</Warning>
+
+</Steps>
+
+## Your First Drive
+
+<Steps>
+
+### Start the Car
+
+Run the main application:
+
+```bash
+python manage.py drive
+```
+
+You should see output indicating the car is starting:
+
+```
+PID: 1234
+Starting vehicle at 20 Hz
+```
+
+### Connect to Web Interface
+
+Open your browser to:
+
+```
+http://raspberrypi.local:8887
+```
+
+You should see:
+- Live camera feed
+- Steering and throttle controls
+- Recording controls
+- Mode indicators
+
+### Drive Manually
+
+Connect your game controller or use the web interface to drive:
+
+<Tabs>
+  <Tab title="Game Controller">
+    If you configured a joystick (Xbox, PS4, etc.):
+    - Left stick: Steering
+    - Right trigger: Forward throttle
+    - Left trigger: Reverse throttle
+    - Button mapping varies by controller type
+  </Tab>
+  <Tab title="Web Interface">
+    Click and drag on the web UI or use keyboard:
+    - Arrow keys: Steering and throttle
+    - Space: Stop
+    - R: Toggle recording
+  </Tab>
+</Tabs>
+
+### Start Recording Data
+
+To train an autopilot later, you need to record driving data:
+
+1. Press the **Record** button in the web interface
+2. Drive the car around your track 10-20 laps
+3. Try to drive smoothly and consistently
+4. Press **Record** again to stop
+
+Your data is saved in `~/mycar/data/` as a "tub".
+
+<Tip>
+Record at least 10,000 frames (about 8-10 minutes at 20 Hz) for good autopilot performance.
+</Tip>
+
+### Stop the Car
+
+Press `Ctrl+C` in the terminal to stop the car application gracefully.
+
+</Steps>
+
+## Train Your First Model
+
+Once you have recorded driving data, you can train an autopilot model:
+
+```bash
+python train.py --tubs data/ --model models/mypilot.h5
+```
+
+<Note>
+Training can take 5-30 minutes depending on your hardware and dataset size. For Raspberry Pi, it's recommended to train on a more powerful PC and transfer the model.
+</Note>
+
+## Drive on Autopilot
+
+Test your trained model:
+
+```bash
+python manage.py drive --model models/mypilot.h5
+```
+
+In the web interface:
+1. Switch mode to **Autopilot** or **Local Pilot**
+2. The car will now drive itself using the trained model
+3. You can take over control at any time
+
+<Warning>
+Always be ready to take manual control! Start with low throttle limits until you trust your model.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation Details" icon="download" href="/installation">
+    Detailed installation for your specific platform
+  </Card>
+  <Card title="Configuration Guide" icon="gear">
+    Deep dive into all configuration options
+  </Card>
+  <Card title="Training Guide" icon="brain">
+    Advanced training techniques and model tuning
+  </Card>
+  <Card title="Hardware Build" icon="screwdriver-wrench">
+    Build your own Donkeycar from scratch
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Camera not working">
+    - Check that the camera is properly connected
+    - For Raspberry Pi Camera: Ensure it's enabled in `raspi-config`
+    - For USB camera: Try `CAMERA_INDEX = 0` or `CAMERA_INDEX = 1`
+    - Test camera: `raspistill -o test.jpg` (Pi Camera) or `v4l2-ctl --list-devices` (USB)
+  </Accordion>
+
+  <Accordion title="Car not responding to controls">
+    - Verify your `DRIVE_TRAIN_TYPE` is correct
+    - Check pin connections match your configuration
+    - Run calibration script to verify PWM output
+    - Check that motors are receiving power
+  </Accordion>
+
+  <Accordion title="Can't connect to web interface">
+    - Verify car's IP address: `hostname -I`
+    - Check firewall settings
+    - Try connecting from the same WiFi network
+    - Ensure `WEB_CONTROL_PORT` is not blocked
+  </Accordion>
+
+  <Accordion title="Import errors when starting">
+    - Verify Donkeycar is installed: `pip list | grep donkey`
+    - Ensure you're using Python 3.11: `python --version`
+    - Reinstall with correct extras: `pip install donkeycar[pi]`
+  </Accordion>
+</AccordionGroup>
+
+## Getting Help
+
+If you run into issues:
+
+- Check the [official documentation](http://docs.donkeycar.com)
+- Join the [Discord community](https://discord.gg/PN6kFeA)
+- Search [GitHub issues](https://github.com/autorope/donkeycar/issues)
+- Ask questions in the #help channel on Discord

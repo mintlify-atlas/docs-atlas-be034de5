@@ -1,0 +1,706 @@
+---
+title: 'Vehicle Templates'
+description: 'Pre-configured vehicle applications for different use cases: complete autonomous car, basic manual control, path following, computer vision, and simulation'
+---
+
+Donkeycar provides **templates** - pre-configured vehicle applications that assemble parts for common use cases. Templates are Python scripts that you customize for your specific car configuration.
+
+## What are Templates?
+
+Templates are complete working applications located in `donkeycar/templates/`. Each template:
+- Assembles parts into a functional vehicle
+- Configures the drive loop
+- Provides command-line interfaces
+- Includes configuration options
+- Serves as examples for building custom vehicles
+
+## Available Templates
+
+### 1. Complete Template (`complete.py`)
+
+**Purpose**: Full-featured autonomous car with machine learning autopilot
+
+**Location**: `donkeycar/templates/complete.py`
+
+**Features**:
+- Camera input (multiple types supported)
+- Web and joystick control
+- ML model inference (Keras, PyTorch, TensorFlow Lite)
+- Data recording (TubWriter)
+- Autopilot mode with model hot-reloading
+- Drivetrain control (servo, ESC, differential drive)
+- Optional sensors (IMU, LIDAR, odometry, GPS)
+- LED status indicators
+- Simulator support (Donkey Gym)
+- Telemetry publishing
+- FPV video streaming
+
+**Usage**:
+```bash
+python manage.py drive --model=models/my_model.h5
+```
+
+**Key Parts**:
+
+From `complete.py:50-576`:
+
+```python
+def drive(cfg, model_path=None, use_joystick=False, model_type=None,
+          camera_type='single', meta=[]):
+    """
+    Construct a working robotic vehicle from many parts. Each part runs as a
+    job in the Vehicle loop, calling either it's run or run_threaded method
+    depending on the constructor flag `threaded`. All parts are updated one
+    after another at the framerate given in cfg.DRIVE_LOOP_HZ assuming each
+    part finishes processing in a timely manner. Parts may have named outputs
+    and inputs. The framework handles passing named outputs to parts
+    requesting the same named input.
+    """
+    V = dk.vehicle.Vehicle()
+    
+    # Add simulator if configured
+    add_simulator(V, cfg)
+    
+    # Add odometry
+    add_odometry(V, cfg)
+    
+    # Add camera
+    add_camera(V, cfg, camera_type)
+    
+    # Add user controller (web + optional joystick)
+    ctr = add_user_controller(V, cfg, use_joystick)
+    
+    # Add autopilot model if provided
+    if model_path:
+        kl = dk.utils.get_model_by_type(model_type, cfg)
+        load_model(kl, model_path)
+        V.add(kl, inputs=inputs, outputs=outputs, run_condition='run_pilot')
+    
+    # Add drivetrain
+    add_drivetrain(V, cfg)
+    
+    # Add data recording
+    tub_writer = TubWriter(tub_path, inputs=inputs, types=types, metadata=meta)
+    V.add(tub_writer, inputs=inputs, outputs=["tub/num_records"], 
+          run_condition='recording')
+    
+    # Start vehicle
+    V.start(rate_hz=cfg.DRIVE_LOOP_HZ, max_loop_count=cfg.MAX_LOOPS)
+```
+
+**Configuration** (`cfg_complete.py`):
+```python
+DRIVE_LOOP_HZ = 20
+CAMERA_TYPE = "PICAM"
+DEFAULT_MODEL_TYPE = "linear"
+AI_THROTTLE_MULT = 1.0
+AUTO_RECORD_ON_THROTTLE = True
+```
+
+<Info>
+The complete template is the most commonly used. It includes everything you need for collecting training data and running an autopilot.
+</Info>
+
+### 2. Basic Template (`basic.py`)
+
+**Purpose**: Minimal car for manual driving and data collection
+
+**Location**: `donkeycar/templates/basic.py`
+
+**Features**:
+- Camera input
+- Web or joystick control
+- Simple data recording
+- Optional autopilot
+- Minimal dependencies
+
+**Usage**:
+```bash
+python manage.py drive
+python manage.py drive --model=models/pilot.h5
+```
+
+**Key Parts**:
+
+From `basic.py:51-204`:
+
+```python
+def drive(cfg, model_path=None, model_type=None):
+    """
+    Construct a minimal robotic vehicle from many parts. Here, we use a
+    single camera, web or joystick controller, autopilot and tubwriter.
+    """
+    car = dk.vehicle.Vehicle()
+    
+    # Add camera
+    if cfg.CAMERA_TYPE == "PICAM":
+        from donkeycar.parts.camera import PiCamera
+        cam = PiCamera(image_w=cfg.IMAGE_W, image_h=cfg.IMAGE_H,
+                       image_d=cfg.IMAGE_DEPTH,
+                       vflip=cfg.CAMERA_VFLIP, hflip=cfg.CAMERA_HFLIP)
+    # ... other camera types
+    
+    car.add(cam, inputs=inputs, outputs=['cam/image_array'], threaded=True)
+    
+    # Add controller
+    if cfg.USE_JOYSTICK_AS_DEFAULT:
+        from donkeycar.parts.controller import get_js_controller
+        ctr = get_js_controller(cfg)
+    else:
+        ctr = LocalWebController(port=cfg.WEB_CONTROL_PORT,
+                                 mode=cfg.WEB_INIT_MODE)
+    car.add(ctr,
+            inputs=['cam/image_array'],
+            outputs=['user/angle', 'user/throttle', 'user/mode', 'recording'],
+            threaded=True)
+    
+    # Add pilot condition
+    car.add(PilotCondition(), inputs=['user/mode'], outputs=['run_pilot'])
+    
+    # Add autopilot if model provided
+    if model_path:
+        kl = dk.utils.get_model_by_type(model_type, cfg)
+        kl.load(model_path=model_path)
+        car.add(kl, inputs=inputs, outputs=outputs, run_condition='run_pilot')
+    
+    # Choose user or pilot control
+    car.add(DriveMode(cfg=cfg),
+            inputs=['user/mode', 'user/angle', 'user/throttle',
+                    'pilot/angle', 'pilot/throttle'],
+            outputs=['angle', 'throttle'])
+    
+    # Add drivetrain
+    steering = PWMSteering(...)
+    throttle = PWMThrottle(...)
+    car.add(steering, inputs=['angle'])
+    car.add(throttle, inputs=['throttle'])
+    
+    # Add data recording
+    tub_writer = TubWriter(base_path=tub_path, inputs=inputs, types=types)
+    car.add(tub_writer, inputs=inputs, outputs=["tub/num_records"],
+            run_condition='recording')
+    
+    # Start
+    car.start(rate_hz=cfg.DRIVE_LOOP_HZ, max_loop_count=cfg.MAX_LOOPS)
+```
+
+**When to use**: Starting a new project, learning Donkeycar, or need minimal setup
+
+### 3. Path Follow Template (`path_follow.py`)
+
+**Purpose**: Follow a recorded path using odometry or GPS
+
+**Location**: `donkeycar/templates/path_follow.py`
+
+**Features**:
+- Path recording and playback
+- Cross-track error (CTE) calculation
+- PID steering control
+- Odometry/pose estimation (wheel encoders)
+- Optional Intel RealSense T265 tracking
+- Optional GPS positioning
+- Path visualization
+- Save/load/reset paths via buttons
+
+**Usage**:
+```bash
+python manage.py drive
+```
+
+**Key Parts**:
+
+From `path_follow.py:74-442`:
+
+```python
+def drive(cfg, use_joystick=False, camera_type='single'):
+    V = dk.vehicle.Vehicle()
+    
+    # Add odometry (wheel encoders)
+    if cfg.HAVE_ODOM:
+        add_odometry(V, cfg)
+    
+    # Add Intel T265 tracking camera (optional)
+    if cfg.HAVE_T265:
+        from donkeycar.parts.realsense2 import RS_T265
+        rs = RS_T265(calib_filename=cfg.WHEEL_ODOM_CALIB)
+        V.add(rs, inputs=['enc/vel_m_s'], outputs=['rs/pos', 'rs/vel', 'rs/acc'], 
+              threaded=True)
+    
+    # Add GPS (optional)
+    add_gps(V, cfg)
+    
+    # Add camera for visualization
+    add_camera(V, cfg, camera_type)
+    
+    # Add controller
+    ctr = add_user_controller(V, cfg, use_joystick, input_image='map/image')
+    
+    # Path recording/playback
+    path = CsvThrottlePath(min_dist=cfg.PATH_MIN_DIST)
+    V.add(path, inputs=['recording', 'pos/x', 'pos/y', 'user/throttle'], 
+          outputs=['path', 'throttles'])
+    
+    # Cross-track error calculation
+    cte = CTE(look_ahead=cfg.PATH_LOOK_AHEAD, 
+              look_behind=cfg.PATH_LOOK_BEHIND,
+              num_pts=cfg.PATH_SEARCH_LENGTH)
+    V.add(cte, inputs=['path', 'pos/x', 'pos/y', 'cte/closest_pt'], 
+          outputs=['cte/error', 'cte/closest_pt'], 
+          run_condition='run_pilot')
+    
+    # PID controller for steering
+    pid = PIDController(p=cfg.PID_P, i=cfg.PID_I, d=cfg.PID_D)
+    pilot = PID_Pilot(pid, cfg.PID_THROTTLE, cfg.USE_CONSTANT_THROTTLE)
+    V.add(pilot, inputs=['cte/error', 'throttles', 'cte/closest_pt'], 
+          outputs=['pilot/steering', 'pilot/throttle'], 
+          run_condition="run_pilot")
+    
+    # Button handlers
+    def save_path():
+        path.save(cfg.PATH_FILENAME)
+    
+    def load_path():
+        path.load(cfg.PATH_FILENAME)
+    
+    ctr.set_button_down_trigger(cfg.SAVE_PATH_BTN, save_path)
+    ctr.set_button_down_trigger(cfg.LOAD_PATH_BTN, load_path)
+    
+    # Path visualization
+    img = PImage(clear_each_frame=True)
+    V.add(img, outputs=['map/image'])
+    
+    plot = PathPlot(scale=cfg.PATH_SCALE, offset=cfg.PATH_OFFSET)
+    V.add(plot, inputs=['map/image', 'path'], outputs=['map/image'])
+    
+    # Add drivetrain
+    add_drivetrain(V, cfg)
+    
+    V.start(rate_hz=cfg.DRIVE_LOOP_HZ, max_loop_count=cfg.MAX_LOOPS)
+```
+
+**Configuration** (`cfg_path_follow.py`):
+```python
+HAVE_ODOM = True          # Use wheel encoders
+HAVE_T265 = False         # Use Intel T265
+HAVE_GPS = False          # Use GPS
+PATH_MIN_DIST = 0.5       # Minimum distance between waypoints (meters)
+PID_P = 0.1               # PID proportional gain
+PID_I = 0.01              # PID integral gain
+PID_D = 0.05              # PID derivative gain
+PATH_FILENAME = "path.csv"
+```
+
+**Workflow**:
+1. Drive manually to record a path
+2. Press save button to save path
+3. Reset car to start position
+4. Switch to autopilot mode
+5. Car follows recorded path using PID control
+
+<Tip>
+Path following is ideal for repeated laps on a track or warehouse navigation without requiring machine learning training.
+</Tip>
+
+### 4. Computer Vision Control (`cv_control.py`)
+
+**Purpose**: Drive using computer vision (line following, object detection)
+
+**Location**: `donkeycar/templates/cv_control.py`
+
+**Features**:
+- Real-time computer vision processing
+- PID-based steering control
+- Configurable CV algorithm (plug in your own)
+- No ML training required
+- Live image overlay showing detection
+
+**Usage**:
+```bash
+python manage.py drive
+```
+
+**Key Parts**:
+
+From `cv_control.py:37-260`:
+
+```python
+def drive(cfg, use_joystick=False, camera_type='single', meta=[]):
+    V = dk.vehicle.Vehicle()
+    
+    # Add camera
+    add_camera(V, cfg, camera_type)
+    
+    # Add controller
+    ctr = add_user_controller(V, cfg, use_joystick, input_image='ui/image_array')
+    
+    # User vs pilot condition
+    V.add(UserPilotCondition(show_pilot_image=getattr(cfg, 'OVERLAY_IMAGE', False)),
+          inputs=['user/mode', "cam/image_array", "cv/image_array"],
+          outputs=['run_user', "run_pilot", "ui/image_array"])
+    
+    # PID controller
+    pid = PID(Kp=cfg.PID_P, Ki=cfg.PID_I, Kd=cfg.PID_D)
+    
+    # Computer Vision Controller (configurable)
+    add_cv_controller(V, cfg, pid,
+                      cfg.CV_CONTROLLER_MODULE,
+                      cfg.CV_CONTROLLER_CLASS,
+                      cfg.CV_CONTROLLER_INPUTS,
+                      cfg.CV_CONTROLLER_OUTPUTS,
+                      cfg.CV_CONTROLLER_CONDITION)
+    
+    # Drivetrain
+    add_drivetrain(V, cfg)
+    
+    # Recording
+    tub_writer = TubWriter(tub_path, inputs=inputs, types=types, metadata=meta)
+    V.add(tub_writer, inputs=inputs, outputs=["tub/num_records"], 
+          run_condition='recording')
+    
+    V.start(rate_hz=cfg.DRIVE_LOOP_HZ, max_loop_count=cfg.MAX_LOOPS)
+
+def add_cv_controller(
+        V, cfg, pid,
+        module_name="donkeycar.parts.line_follower",
+        class_name="LineFollower",
+        inputs=['cam/image_array'],
+        outputs=['pilot/steering', 'pilot/throttle', 'cv/image_array'],
+        run_condition="run_pilot"):
+    
+    # Dynamically import CV controller
+    module = __import__(module_name)
+    for attr in module_name.split('.')[1:]:
+        module = getattr(module, attr)
+    
+    my_class = getattr(module, class_name)
+    
+    # Add instance of class to vehicle
+    V.add(my_class(pid, cfg),
+          inputs=inputs,
+          outputs=outputs,
+          run_condition=run_condition)
+```
+
+**Configuration** (`cfg_cv_control.py`):
+```python
+CV_CONTROLLER_MODULE = "donkeycar.parts.line_follower"
+CV_CONTROLLER_CLASS = "LineFollower"
+CV_CONTROLLER_INPUTS = ['cam/image_array']
+CV_CONTROLLER_OUTPUTS = ['pilot/steering', 'pilot/throttle', 'cv/image_array']
+CV_CONTROLLER_CONDITION = "run_pilot"
+PID_P = 0.1
+PID_I = 0.01
+PID_D = 0.05
+OVERLAY_IMAGE = True  # Show detection overlay
+```
+
+**Example CV Controller** (line follower):
+```python
+class LineFollower:
+    def __init__(self, pid, cfg):
+        self.pid = pid
+        self.throttle = cfg.CV_THROTTLE
+    
+    def run(self, image):
+        # Find line center
+        line_center = self.detect_line(image)
+        
+        # Calculate error from image center
+        image_center = image.shape[1] / 2
+        error = line_center - image_center
+        
+        # PID control
+        steering = self.pid(error)
+        
+        # Generate overlay image
+        overlay = self.draw_detection(image, line_center)
+        
+        return steering, self.throttle, overlay
+```
+
+**When to use**: Line following, cone detection, or any vision-based task that doesn't need ML
+
+### 5. Simulator Template (`simulator.py`)
+
+**Purpose**: Run in Donkey Gym simulator
+
+**Location**: `donkeycar/templates/simulator.py`
+
+**Features**:
+- Connects to Donkey Gym simulator
+- Same API as physical car
+- Records simulated sensor data
+- Test models in simulation
+- Includes brake control
+- Optional sensor recording (lidar, IMU, velocity)
+
+**Usage**:
+```bash
+# Start simulator first
+python manage.py drive --model=models/simulator_pilot.h5
+```
+
+**Key Parts**:
+
+From `simulator.py:36-423`:
+
+```python
+def drive(cfg, model_path=None, use_joystick=False, model_type=None, 
+          camera_type='single', meta=[]):
+    
+    V = dk.vehicle.Vehicle()
+    
+    # Donkey Gym connection
+    from donkeycar.parts.dgym import DonkeyGymEnv
+    
+    gym = DonkeyGymEnv(cfg.DONKEY_SIM_PATH, 
+                       host=cfg.SIM_HOST, 
+                       env_name=cfg.DONKEY_GYM_ENV_NAME, 
+                       conf=cfg.GYM_CONF,
+                       delay=cfg.SIM_ARTIFICIAL_LATENCY)
+    
+    inputs = ['angle', 'throttle', 'brake']  # Simulator supports brake
+    outputs = ['cam/image_array']
+    
+    # Optionally record simulator sensor data
+    if cfg.SIM_RECORD_LOCATION:
+        outputs += ['pos/pos_x', 'pos/pos_y', 'pos/pos_z', 'pos/speed', 'pos/cte']
+    if cfg.SIM_RECORD_GYROACCEL:
+        outputs += ['gyro/gyro_x', 'gyro/gyro_y', 'gyro/gyro_z', 
+                    'accel/accel_x', 'accel/accel_y', 'accel/accel_z']
+    if cfg.SIM_RECORD_VELOCITY:
+        outputs += ['vel/vel_x', 'vel/vel_y', 'vel/vel_z']
+    if cfg.SIM_RECORD_LIDAR:
+        outputs += ['lidar/dist_array']
+    
+    V.add(gym, inputs=inputs, outputs=outputs, threaded=True)
+    
+    # Same structure as complete template
+    # Add controller, model, etc.
+    
+    V.start(rate_hz=cfg.DRIVE_LOOP_HZ, max_loop_count=cfg.MAX_LOOPS)
+```
+
+**Configuration** (`cfg_simulator.py`):
+```python
+DONKEY_GYM = True
+DONKEY_SIM_PATH = "remote"  # or path to local sim
+SIM_HOST = "127.0.0.1:9091"
+DONKEY_GYM_ENV_NAME = "donkey-generated-track-v0"
+SIM_ARTIFICIAL_LATENCY = 0
+SIM_RECORD_LOCATION = True
+SIM_RECORD_GYROACCEL = False
+SIM_RECORD_VELOCITY = False
+SIM_RECORD_LIDAR = False
+```
+
+<Note>
+The simulator template allows you to develop and test without physical hardware. Models trained in simulation can be transferred to real cars, though performance may vary.
+</Note>
+
+## Template Selection Guide
+
+| Template | Use Case | ML Required | Hardware |
+|----------|----------|-------------|----------|
+| **complete** | General autonomous driving | Yes (training) | Full car |
+| **basic** | Learning, minimal setup | Optional | Minimal |
+| **path_follow** | Repeated paths, no ML | No | + Encoders/GPS |
+| **cv_control** | Vision-based control | No | Camera only |
+| **simulator** | Development, testing | Optional | None (sim) |
+
+## Common Template Structure
+
+All templates follow a similar pattern:
+
+```python
+#!/usr/bin/env python3
+"""
+Docstring with usage instructions
+"""
+from docopt import docopt
+import donkeycar as dk
+
+def drive(cfg, **kwargs):
+    """Main function that assembles the vehicle"""
+    # 1. Create vehicle
+    V = dk.vehicle.Vehicle()
+    
+    # 2. Add input parts (camera, sensors)
+    add_camera(V, cfg)
+    
+    # 3. Add control parts (user input, autopilot)
+    add_user_controller(V, cfg)
+    
+    # 4. Add output parts (actuators)
+    add_drivetrain(V, cfg)
+    
+    # 5. Add utility parts (recording, telemetry)
+    add_tub(V, cfg)
+    
+    # 6. Start the loop
+    V.start(rate_hz=cfg.DRIVE_LOOP_HZ)
+
+if __name__ == '__main__':
+    args = docopt(__doc__)
+    cfg = dk.load_config(myconfig=args['--myconfig'])
+    drive(cfg, **args)
+```
+
+## Customizing Templates
+
+### 1. Copy Template to Your Project
+
+```bash
+donkey createcar --path ~/mycar
+cd ~/mycar
+```
+
+This creates `manage.py` based on the complete template.
+
+### 2. Modify manage.py
+
+Add custom parts:
+
+```python
+def drive(cfg, model_path=None, use_joystick=False):
+    V = dk.vehicle.Vehicle()
+    
+    # ... existing parts ...
+    
+    # Add your custom part
+    from my_parts import CustomSensor
+    sensor = CustomSensor()
+    V.add(sensor, outputs=['sensor/value'])
+    
+    # Use sensor output
+    V.add(model, 
+          inputs=['cam/image_array', 'sensor/value'],
+          outputs=['pilot/angle', 'pilot/throttle'])
+    
+    V.start(rate_hz=cfg.DRIVE_LOOP_HZ)
+```
+
+### 3. Adjust Configuration
+
+Edit `myconfig.py`:
+
+```python
+DRIVE_LOOP_HZ = 20
+CAMERA_TYPE = "PICAM"
+IMAGE_W = 160
+IMAGE_H = 120
+# Add custom settings
+CUSTOM_SENSOR_PORT = "/dev/ttyUSB0"
+CUSTOM_THRESHOLD = 0.75
+```
+
+## Helper Functions
+
+Templates use helper functions for common setup:
+
+### add_camera()
+
+From `complete.py:832-901`:
+
+```python
+def add_camera(V, cfg, camera_type):
+    """Add the configured camera to the vehicle pipeline."""
+    if cfg.CAMERA_TYPE == "PICAM":
+        from donkeycar.parts.camera import PiCamera
+        cam = PiCamera(image_w=cfg.IMAGE_W, image_h=cfg.IMAGE_H,
+                       vflip=cfg.CAMERA_VFLIP, hflip=cfg.CAMERA_HFLIP)
+    elif cfg.CAMERA_TYPE == "WEBCAM":
+        from donkeycar.parts.camera import Webcam
+        cam = Webcam(image_w=cfg.IMAGE_W, image_h=cfg.IMAGE_H)
+    # ... more camera types
+    
+    V.add(cam, inputs=[], outputs=['cam/image_array'], threaded=True)
+```
+
+### add_user_controller()
+
+From `complete.py:687-760`:
+
+```python
+def add_user_controller(V, cfg, use_joystick):
+    """Add web controller and optional joystick."""
+    # Web controller
+    ctr = LocalWebController(port=cfg.WEB_CONTROL_PORT, mode=cfg.WEB_INIT_MODE)
+    V.add(ctr,
+          inputs=['cam/image_array', 'tub/num_records', 'user/mode', 'recording'],
+          outputs=['user/steering', 'user/throttle', 'user/mode', 'recording'],
+          threaded=True)
+    
+    # Optional joystick
+    if use_joystick or cfg.USE_JOYSTICK_AS_DEFAULT:
+        from donkeycar.parts.controller import get_js_controller
+        ctr = get_js_controller(cfg)
+        V.add(ctr, ...)
+    
+    return ctr
+```
+
+### add_drivetrain()
+
+From `complete.py:942-1148`:
+
+```python
+def add_drivetrain(V, cfg):
+    """Setup drivetrain based on configuration."""
+    if cfg.DRIVE_TRAIN_TYPE == "PWM_STEERING_THROTTLE":
+        from donkeycar.parts.actuator import PWMSteering, PWMThrottle
+        steering = PWMSteering(...)
+        throttle = PWMThrottle(...)
+        V.add(steering, inputs=['steering'], threaded=True)
+        V.add(throttle, inputs=['throttle'], threaded=True)
+    elif cfg.DRIVE_TRAIN_TYPE == "DC_TWO_WHEEL":
+        # Differential drive setup
+        ...
+    # ... more drive train types
+```
+
+## Creating Your Own Template
+
+```python
+#!/usr/bin/env python3
+"""
+My Custom Template
+
+Usage:
+    manage.py drive [--option=<value>]
+"""
+from docopt import docopt
+import donkeycar as dk
+
+def drive(cfg):
+    """
+    Build your custom vehicle here.
+    """
+    V = dk.vehicle.Vehicle()
+    
+    # Add your parts
+    # ...
+    
+    V.start(rate_hz=cfg.DRIVE_LOOP_HZ)
+
+if __name__ == '__main__':
+    args = docopt(__doc__)
+    cfg = dk.load_config()
+    drive(cfg)
+```
+
+## Best Practices
+
+1. **Start with existing template**: Modify rather than create from scratch
+2. **Use helper functions**: Reuse `add_camera()`, `add_drivetrain()`, etc.
+3. **Keep configuration in myconfig.py**: Don't hardcode values
+4. **Document changes**: Add comments explaining modifications
+5. **Test incrementally**: Add one part at a time and test
+6. **Version control**: Track changes to manage.py
+
+## Next Steps
+
+- Learn about the [Architecture](/concepts/architecture) that templates build on
+- Understand the [Vehicle Loop](/concepts/vehicle-loop) that runs templates
+- Study [Parts](/concepts/parts) to create custom components
+- Explore the [Memory](/concepts/memory) system for data flow

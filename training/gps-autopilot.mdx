@@ -1,0 +1,623 @@
+---
+title: GPS-Based Navigation
+description: Record and follow GPS waypoint paths for autonomous outdoor navigation
+---
+
+Donkeycar supports GPS-based autonomous navigation where the car records a path of waypoints and then follows that path using a PID controller. This is ideal for outdoor driving on larger tracks where GPS signal is available.
+
+## Overview
+
+GPS autopilot allows your car to:
+- **Record paths** by driving manually
+- **Save waypoints** as GPS coordinates (converted to local meters)
+- **Follow paths** autonomously using cross-track error (CTE) and PID control
+- **Navigate outdoors** on large courses
+
+**Requirements:**
+- GPS module (serial NMEA interface)
+- Open sky for GPS signal
+- Odometry sensors (optional, but recommended)
+- Intel RealSense T265 (optional, for visual-inertial odometry)
+
+## Template Setup
+
+The path following template is available at `donkeycar/templates/path_follow.py`:
+
+```bash
+donkey createcar --path ~/mycar --template path_follow
+```
+
+This creates a car configured for GPS waypoint following.
+
+## System Architecture
+
+The GPS autopilot system consists of:
+
+1. **Position Sources**: GPS, wheel odometry, or T265 camera
+2. **Path Recording**: Store (x,y) waypoints with throttle values
+3. **Cross-Track Error**: Calculate distance from path
+4. **PID Control**: Steer back toward path
+5. **Visualization**: Real-time map display
+
+## Configuration
+
+Configure GPS navigation in `myconfig.py`:
+
+```python
+#
+# GPS Configuration
+#
+HAVE_GPS = True
+GPS_SERIAL = '/dev/ttyUSB0'  # Serial port for GPS module
+GPS_SERIAL_BAUDRATE = 9600   # Baud rate (typically 9600 or 115200)
+GPS_DEBUG = False            # Enable verbose GPS logging
+GPS_NMEA_PATH = 'data/nmea.txt'  # Save NMEA sentences for playback
+
+#
+# Odometry Configuration (optional)
+#
+HAVE_ODOM = True
+HAVE_ODOM_2 = False  # True for dual encoders (differential drive)
+WHEEL_ODOM_CALIB = 'calibration_odometry.json'  # For T265 fusion
+
+#
+# Intel RealSense T265 (optional)
+#
+HAVE_T265 = True
+REALSENSE_T265_ID = None  # Device ID (None for auto-detect)
+
+#
+# Path Recording
+#
+PATH_FILENAME = 'data/path.txt'  # Save/load path waypoints
+PATH_MIN_DIST = 0.5              # Minimum distance between waypoints (meters)
+PATH_DEBUG = False               # Enable verbose path logging
+
+#
+# Path Following - PID Control
+#
+PID_P = 0.2       # Proportional gain
+PID_I = 0.0       # Integral gain
+PID_D = 0.02      # Derivative gain
+PID_THROTTLE = 0.3  # Throttle when following path
+USE_CONSTANT_THROTTLE = False  # Use constant throttle or recorded values
+
+# PID tuning buttons
+PID_P_DELTA = 0.01
+PID_D_DELTA = 0.01
+DEC_PID_P_BTN = 'square'   # Decrease P
+INC_PID_P_BTN = 'triangle' # Increase P
+DEC_PID_D_BTN = 'cross'    # Decrease D
+INC_PID_D_BTN = 'circle'   # Increase D
+
+#
+# Cross-Track Error Calculation
+#
+PATH_LOOK_AHEAD = 1   # Waypoints to look ahead
+PATH_LOOK_BEHIND = 1  # Waypoints to look behind
+PATH_SEARCH_LENGTH = None  # Max waypoints to search (None = all)
+
+#
+# Path Visualization
+#
+PATH_SCALE = 5.0           # Pixels per meter for display
+PATH_OFFSET = (250, 250)   # Center point of display
+
+#
+# Control Buttons
+#
+SAVE_PATH_BTN = 'R1'       # Save recorded path
+LOAD_PATH_BTN = 'L1'       # Load saved path
+ERASE_PATH_BTN = 'R2'      # Erase path from memory
+RESET_ORIGIN_BTN = 'L2'    # Reset origin to current position
+TOGGLE_RECORDING_BTN = 'start'  # Toggle recording on/off
+```
+
+## GPS Module
+
+### Supported GPS
+
+Any GPS module with NMEA serial output:
+- u-blox NEO-M8N
+- Adafruit Ultimate GPS
+- Generic USB GPS receivers
+
+### GPS Connection
+
+```python
+from donkeycar.parts.serial_port import SerialPort, SerialLineReader
+from donkeycar.parts.gps import GpsNmeaPositions, GpsLatestPosition
+
+# Open serial port
+serial_port = SerialPort(cfg.GPS_SERIAL, cfg.GPS_SERIAL_BAUDRATE)
+
+# Read NMEA sentences
+nmea_reader = SerialLineReader(serial_port)
+V.add(nmea_reader, outputs=['gps/nmea'], threaded=True)
+
+# Convert NMEA to positions
+gps_positions = GpsNmeaPositions(debug=cfg.GPS_DEBUG)
+V.add(gps_positions, inputs=['gps/nmea'], outputs=['gps/positions'])
+
+# Get latest position
+gps_latest = GpsLatestPosition(debug=cfg.GPS_DEBUG)
+V.add(gps_latest, 
+      inputs=['gps/positions'], 
+      outputs=['gps/timestamp', 'gps/utm/longitude', 'gps/utm/latitude'])
+```
+
+### GPS Data Flow
+
+```
+GPS Module → Serial Port → NMEA Reader → NMEA Parser → Position Converter → UTM Coordinates
+```
+
+**NMEA sentence example:**
+```
+$GPRMC,003918.00,A,3806.92281,N,12235.64362,W,0.090,,060322,,,D*67
+```
+
+**Parsed position:**
+- Latitude: 38.115381° N
+- Longitude: -122.594060° W
+- UTM: (551234.56, 4219876.54) meters
+
+### Position Sources
+
+Different ways to get position (x, y):
+
+**1. GPS only:**
+```python
+# Rename GPS UTM to pose
+V.add(Pipe(), 
+      inputs=['gps/utm/longitude', 'gps/utm/latitude'], 
+      outputs=['pos/x', 'pos/y'])
+```
+
+**2. Wheel odometry:**
+```python
+# Wheel encoders provide relative position
+add_odometry(V, cfg)
+# Outputs: 'pos/x', 'pos/y', 'pos/steering'
+```
+
+**3. Intel RealSense T265 (with odometry fusion):**
+```python
+from donkeycar.parts.realsense2 import RS_T265
+
+# T265 with wheel odometry calibration
+rs = RS_T265(image_output=False, 
+             calib_filename=cfg.WHEEL_ODOM_CALIB,
+             device_id=cfg.REALSENSE_T265_ID)
+V.add(rs, 
+      inputs=['enc/vel_m_s'], 
+      outputs=['rs/pos', 'rs/vel', 'rs/acc'], 
+      threaded=True)
+
+# Convert T265 pose to top-down coordinates
+class PosStream:
+    def run(self, pos):
+        # y is up, x is right, z is forward (AR coordinate system)
+        # Convert to: x is east, y is north (map coordinates)
+        return -pos.z, -pos.x
+
+V.add(PosStream(), inputs=['rs/pos'], outputs=['pos/x', 'pos/y'])
+```
+
+## Path Recording
+
+The path is recorded as a sequence of (x, y, throttle) waypoints.
+
+### Path Classes
+
+**CsvThrottlePath** - Records waypoints with throttle values:
+
+```python
+from donkeycar.parts.path import CsvThrottlePath
+
+# Create path recorder
+path = CsvThrottlePath(min_dist=cfg.PATH_MIN_DIST)
+
+# Add to vehicle
+V.add(path, 
+      inputs=['recording', 'pos/x', 'pos/y', 'user/throttle'],
+      outputs=['path', 'throttles'])
+```
+
+**Key methods:**
+
+```python
+def run(self, recording: bool, x: float, y: float, throttle: float):
+    """Record waypoint if distance threshold met"""
+    if recording:
+        d = dist(x, y, self.x, self.y)
+        if d > self.min_dist:
+            self.path.append((x, y))
+            self.throttles.append(throttle)
+            self.x = x
+            self.y = y
+    return self.path, self.throttles
+
+def save(self, filename: str) -> bool:
+    """Save path to CSV file"""
+    with open(filename, 'w') as outfile:
+        for (x, y), v in zip(self.path, self.throttles):
+            outfile.write(f"{x}, {y}, {v}\n")
+    return True
+
+def load(self, filename: str) -> bool:
+    """Load path from CSV file"""
+    with open(filename, "r") as infile:
+        for line in infile:
+            xy = [float(i.strip()) for i in line.strip().split(",")]
+            self.path.append((xy[0], xy[1]))
+            self.throttles.append(xy[2])
+    return True
+```
+
+### Recording Workflow
+
+1. **Start car**: `python manage.py drive`
+2. **Begin recording**: Press 'R' on web UI or configured button
+3. **Drive path**: Drive the desired route manually
+4. **Stop recording**: Press 'R' again
+5. **Save path**: Press SAVE_PATH_BTN (default: 'R1')
+6. **Path saved**: Waypoints saved to `PATH_FILENAME`
+
+## Origin Management
+
+Manage coordinate origin for consistent path following:
+
+```python
+from donkeycar.parts.path import OriginOffset
+
+# Create origin manager
+origin_reset = OriginOffset(cfg.PATH_DEBUG)
+
+V.add(origin_reset,
+      inputs=['pos/x', 'pos/y', 'cte/closest_pt'],
+      outputs=['pos/x', 'pos/y', 'cte/closest_pt'])
+```
+
+**Functions:**
+
+```python
+def reset_origin():
+    """Reset origin to current position"""
+    origin_reset.reset_origin()
+    # Next position received becomes (0, 0)
+
+def erase_path():
+    """Clear path and reset origin"""
+    origin_reset.reset_origin()
+    path.reset()
+```
+
+**Use cases:**
+- Start path at known position
+- Align path after loading
+- Recover from GPS drift
+
+## Cross-Track Error (CTE)
+
+CTE calculates perpendicular distance from current position to nearest path segment.
+
+### CTE Algorithm
+
+```python
+from donkeycar.parts.path import CTE
+
+# Create CTE calculator
+cte = CTE(look_ahead=cfg.PATH_LOOK_AHEAD,
+          look_behind=cfg.PATH_LOOK_BEHIND,
+          num_pts=cfg.PATH_SEARCH_LENGTH)
+
+V.add(cte,
+      inputs=['path', 'pos/x', 'pos/y', 'cte/closest_pt'],
+      outputs=['cte/error', 'cte/closest_pt'],
+      run_condition='run_pilot')
+```
+
+**CTE calculation:**
+
+```python
+def run(self, path, x, y, from_pt=None):
+    """Calculate cross-track error"""
+    # Find nearest track segment
+    a, b, i = self.nearest_track(path, x, y,
+                                 look_ahead=self.look_ahead,
+                                 look_behind=self.look_behind,
+                                 from_pt=from_pt,
+                                 num_pts=self.num_pts)
+    
+    if a and b:
+        # Create line from waypoints
+        a_v = Vec3(a[0], 0., a[1])
+        b_v = Vec3(b[0], 0., b[1])
+        p_v = Vec3(x, 0., y)
+        line = Line3D(a_v, b_v)
+        
+        # Calculate perpendicular distance
+        err = line.vector_to(p_v)
+        
+        # Determine sign (left/right of path)
+        sign = 1.0
+        cp = line.dir.cross(err.normalized())
+        if cp.y > 0.0:
+            sign = -1.0
+        cte = err.mag() * sign
+    
+    return cte, i  # error in meters, closest waypoint index
+```
+
+**Parameters:**
+- `look_ahead`: Waypoints ahead of closest point to include in segment
+- `look_behind`: Waypoints behind closest point to include in segment  
+- `num_pts`: Maximum waypoints to search (optimization for long paths)
+
+## PID Control
+
+PID controller converts CTE into steering commands.
+
+### PID Pilot
+
+```python
+from donkeycar.parts.path import PID_Pilot
+from donkeycar.parts.transform import PIDController
+
+# Create PID controller
+pid = PIDController(p=cfg.PID_P, i=cfg.PID_I, d=cfg.PID_D)
+
+# Create pilot
+pilot = PID_Pilot(pid, 
+                  cfg.PID_THROTTLE,
+                  cfg.USE_CONSTANT_THROTTLE,
+                  min_throttle=cfg.PID_THROTTLE)
+
+V.add(pilot,
+      inputs=['cte/error', 'throttles', 'cte/closest_pt'],
+      outputs=['pilot/steering', 'pilot/throttle'],
+      run_condition='run_pilot')
+```
+
+**PID calculation:**
+
+```python
+def run(self, cte: float, throttles: list, closest_pt_idx: int):
+    """Calculate steering from CTE using PID"""
+    # PID steering
+    steer = self.pid.run(cte)
+    
+    # Throttle selection
+    if self.use_constant_throttle or throttles is None:
+        throttle = self.throttle
+    else:
+        # Use recorded throttle at nearest waypoint
+        throttle = throttles[closest_pt_idx] * self.variable_speed_multiplier
+        if throttle < self.min_throttle:
+            throttle = self.min_throttle
+    
+    return steer, throttle
+```
+
+### PID Tuning
+
+**Tuning guide:**
+
+1. **Start with P only**: Set P=0.1, I=0, D=0
+   - Too low: Doesn't reach path
+   - Too high: Oscillates
+
+2. **Add D term**: Increase D to dampen oscillations
+   - D=0.01 to 0.05 typically
+
+3. **Add I term** (optional): Eliminates steady-state error
+   - Usually not needed for path following
+
+**Live tuning:**
+```python
+def inc_pid_p():
+    pid.Kp += cfg.PID_P_DELTA
+    logging.info(f"PID P: {pid.Kp}")
+
+def dec_pid_p():
+    pid.Kp -= cfg.PID_P_DELTA
+    logging.info(f"PID P: {pid.Kp}")
+```
+
+**Recommended starting values:**
+- **GPS only**: P=0.2, I=0.0, D=0.02
+- **T265**: P=0.3, I=0.0, D=0.03
+- **Odometry**: P=0.25, I=0.0, D=0.025
+
+## Path Visualization
+
+Real-time map display of path and position.
+
+### Visualization Parts
+
+```python
+from donkeycar.parts.path import PImage, PathPlot, PlotCircle
+
+# Create blank image
+img = PImage(clear_each_frame=True)
+V.add(img, outputs=['map/image'])
+
+# Draw path on image
+plot = PathPlot(scale=cfg.PATH_SCALE, offset=cfg.PATH_OFFSET)
+V.add(plot, 
+      inputs=['map/image', 'path'], 
+      outputs=['map/image'])
+
+# Draw current position
+pos_plot_pilot = PlotCircle(scale=cfg.PATH_SCALE, 
+                            offset=cfg.PATH_OFFSET, 
+                            color='blue')
+V.add(pos_plot_pilot,
+      inputs=['map/image', 'pos/x', 'pos/y'],
+      outputs=['map/image'],
+      run_condition='run_pilot')
+
+pos_plot_user = PlotCircle(scale=cfg.PATH_SCALE,
+                          offset=cfg.PATH_OFFSET,
+                          color='green')
+V.add(pos_plot_user,
+      inputs=['map/image', 'pos/x', 'pos/y'],
+      outputs=['map/image'],
+      run_condition='run_user')
+```
+
+**Display colors:**
+- **Red line**: Recorded path
+- **Green dot**: Current position (user mode)
+- **Blue dot**: Current position (autopilot mode)
+
+## GPS Playback
+
+Replay recorded GPS data for testing:
+
+```python
+from donkeycar.parts.gps import GpsPlayer
+from donkeycar.parts.text_writer import CsvLogger
+
+# Record NMEA sentences during driving
+nmea_writer = CsvLogger(cfg.GPS_NMEA_PATH, separator='\t', field_count=2)
+V.add(nmea_writer, 
+      inputs=['recording', 'gps/nmea'], 
+      outputs=['gps/recorded/nmea'])
+
+# Playback NMEA sentences in autopilot mode
+nmea_player = GpsPlayer(nmea_writer)
+V.add(nmea_player,
+      inputs=['run_pilot', 'gps/nmea'],
+      outputs=['gps/playing', 'gps/nmea'])
+```
+
+**Benefits:**
+- Test path following indoors
+- Replay actual GPS signal
+- Debug without GPS module
+
+## Complete Workflow
+
+### 1. Setup Hardware
+- Connect GPS module to serial port
+- (Optional) Install wheel encoders
+- (Optional) Mount Intel T265 camera
+
+### 2. Configure Car
+```bash
+donkey createcar --path ~/mycar --template path_follow
+cd ~/mycar
+# Edit myconfig.py with your settings
+```
+
+### 3. Record Path
+```bash
+python manage.py drive
+
+# In web UI:
+# 1. Press 'R' to start recording
+# 2. Drive the path manually
+# 3. Press 'R' to stop recording
+# 4. Press SAVE_PATH_BTN (R1) to save
+```
+
+### 4. Follow Path
+```bash
+# Restart car (or press LOAD_PATH_BTN)
+python manage.py drive
+
+# Position car at start of path
+# Press RESET_ORIGIN_BTN (L2)
+# Switch to autopilot mode
+# Car follows recorded path
+```
+
+### 5. Tune Performance
+- Adjust PID gains using increment/decrement buttons
+- Modify PATH_LOOK_AHEAD/BEHIND for smoother/tighter following
+- Change PATH_MIN_DIST for more/fewer waypoints
+
+## Advanced Features
+
+### Variable Speed
+
+Follow path at recorded speeds:
+
+```python
+USE_CONSTANT_THROTTLE = False  # Use recorded throttle values
+```
+
+The car will:
+- Speed up on straights (where you drove fast)
+- Slow down on curves (where you drove slow)
+
+### Waypoint Detection
+
+Detect when reaching specific waypoints:
+
+```python
+from donkeycar.parts.path import CTE
+
+class WaypointTrigger:
+    def __init__(self, waypoint_index, threshold=1.0):
+        self.waypoint_index = waypoint_index
+        self.threshold = threshold
+        self.triggered = False
+    
+    def run(self, closest_pt_idx, pos_x, pos_y, path):
+        if closest_pt_idx == self.waypoint_index:
+            wp_x, wp_y = path[self.waypoint_index]
+            dist = math.sqrt((pos_x - wp_x)**2 + (pos_y - wp_y)**2)
+            if dist < self.threshold and not self.triggered:
+                self.triggered = True
+                print(f"Reached waypoint {self.waypoint_index}!")
+                return True
+        return False
+```
+
+### Differential Drive
+
+Path following works with differential drive:
+
+```python
+from donkeycar.parts.kinematics import TwoWheelSteeringThrottle
+
+# Convert steering/throttle to left/right motor speeds
+V.add(TwoWheelSteeringThrottle(),
+      inputs=['throttle', 'steering'],
+      outputs=['left/throttle', 'right/throttle'])
+```
+
+## Troubleshooting
+
+**GPS not working:**
+- Check serial port: `ls /dev/ttyUSB*` or `/dev/ttyACM*`
+- Verify baudrate matches GPS module
+- Ensure GPS has clear view of sky
+- Wait for GPS fix (can take 30+ seconds)
+
+**Path not following correctly:**
+- Check PID gains (start with P only)
+- Increase PATH_LOOK_AHEAD for smoother following
+- Verify origin is reset at path start
+- Check CTE signs (may need to invert)
+
+**Position drift:**
+- Use T265 for better accuracy
+- Fuse wheel odometry with T265
+- Reduce PATH_MIN_DIST for more waypoints
+- Drive slower during recording
+
+**Oscillation:**
+- Reduce P gain
+- Increase D gain
+- Check for mechanical play in steering
+
+## Next Steps
+
+- [Deep Learning Models](/training/deep-learning) - Combine GPS with neural networks
+- [Computer Vision](/training/computer-vision) - Alternative CV-based navigation
+- [Odometry](/parts/odometry) - Configure wheel encoders
+- [Sensors](/parts/sensors) - Add IMU and other sensors

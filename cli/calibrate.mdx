@@ -1,0 +1,228 @@
+---
+title: donkey calibrate
+description: Calibrate steering servo and throttle ESC for your Donkeycar
+---
+
+The `donkey calibrate` command provides an interactive tool for calibrating your car's servo motors and electronic speed controller (ESC). Proper calibration is essential for accurate steering and throttle control.
+
+## Usage
+
+```bash
+donkey calibrate [options]
+```
+
+## PWM Controllers
+
+Donkeycar supports multiple PWM controller types:
+
+- **PCA9685**: I2C PWM controller (most common, used with Raspberry Pi)
+- **Arduino**: Arduino board with Firmata firmware
+- **Custom PWM pins**: Direct GPIO PWM pins (RPI_GPIO, etc.)
+
+## Options
+
+### PCA9685 Options (Default)
+
+<ParamField path="--channel" type="integer" required>
+  The PCA9685 channel number to calibrate (0-15). Typically:
+  - Channel 0: Steering servo
+  - Channel 1: Throttle ESC
+</ParamField>
+
+<ParamField path="--address" type="hex string" default="0x40">
+  The I2C address of the PCA9685 controller. Default is `0x40`.
+</ParamField>
+
+<ParamField path="--bus" type="integer">
+  The I2C bus number. If not specified, it will be auto-detected.
+</ParamField>
+
+<ParamField path="--pwmFreq" type="integer" default="60">
+  The PWM frequency in Hz. Default is 60 Hz, which is standard for servos.
+</ParamField>
+
+### Arduino Options
+
+<ParamField path="--arduino" type="boolean" default="false">
+  Use Arduino pin for PWM output. When enabled, the `--channel` parameter specifies the Arduino pin number.
+</ParamField>
+
+### Custom PWM Pin Options
+
+<ParamField path="--pwm-pin" type="string">
+  Specify a custom PWM pin using pin specifier syntax:
+  - `RPI_GPIO.BOARD.33`: Raspberry Pi GPIO pin 33 (BOARD numbering)
+  - `PCA9685.1:40.13`: PCA9685 at address 0x40, channel 13
+</ParamField>
+
+## Calibration Process
+
+### Step 1: Identify Your Hardware
+
+Before calibrating, identify:
+- Which channel your servo/ESC is connected to
+- The I2C address of your PCA9685 (if applicable)
+- Your hardware's safe PWM range (typically 250-450)
+
+### Step 2: Start Calibration
+
+For steering servo on channel 0:
+```bash
+donkey calibrate --channel 0
+```
+
+For throttle ESC on channel 1:
+```bash
+donkey calibrate --channel 1
+```
+
+### Step 3: Test PWM Values
+
+The calibration tool will prompt you to enter PWM values:
+
+```
+Enter a PWM setting to test ('q' for quit) (0-1500):
+```
+
+Start with safe middle values (around 370) and gradually test different values:
+- **Lower values** (e.g., 250-300): Turn servo left or move backward
+- **Middle values** (e.g., 370): Center position or stopped
+- **Higher values** (e.g., 400-450): Turn servo right or move forward
+
+### Step 4: Record Your Values
+
+Note the PWM values for:
+- **Steering**: Left max, center, right max
+- **Throttle**: Full reverse, stopped, full forward
+
+### Step 5: Update Configuration
+
+Add the calibrated values to your `myconfig.py`:
+
+```python
+# Steering
+STEERING_LEFT_PWM = 460
+STEERING_RIGHT_PWM = 290
+
+# Throttle
+THROTTLE_FORWARD_PWM = 400
+THROTTLE_STOPPED_PWM = 370
+THROTTLE_REVERSE_PWM = 310
+```
+
+## Examples
+
+### Calibrate steering servo (PCA9685 channel 0)
+
+```bash
+donkey calibrate --channel 0
+```
+
+**Example session:**
+```
+init PCA9685 on channel 0 address 0x40 bus None
+Using PWM freq: 60
+
+Enter a PWM setting to test ('q' for quit) (0-1500): 370
+Enter a PWM setting to test ('q' for quit) (0-1500): 300
+Enter a PWM setting to test ('q' for quit) (0-1500): 450
+Enter a PWM setting to test ('q' for quit) (0-1500): q
+```
+
+### Calibrate throttle ESC (PCA9685 channel 1)
+
+```bash
+donkey calibrate --channel 1
+```
+
+### Use custom I2C address
+
+```bash
+donkey calibrate --channel 0 --address 0x41
+```
+
+### Calibrate with specific I2C bus
+
+```bash
+donkey calibrate --channel 0 --bus 1
+```
+
+### Use custom PWM frequency
+
+```bash
+donkey calibrate --channel 0 --pwmFreq 50
+```
+
+### Calibrate Arduino pin
+
+```bash
+donkey calibrate --arduino --channel 9
+```
+
+**Example session:**
+```
+init Arduino PWM on pin 9
+Enter a PWM setting to test ('q' for quit) (0-180): 90
+Enter a PWM setting to test ('q' for quit) (0-180): 45
+Enter a PWM setting to test ('q' for quit) (0-180): 135
+Enter a PWM setting to test ('q' for quit) (0-180): q
+```
+
+### Calibrate custom PWM pin
+
+```bash
+donkey calibrate --pwm-pin RPI_GPIO.BOARD.33
+```
+
+```bash
+donkey calibrate --pwm-pin PCA9685.1:40.13
+```
+
+## Safety Tips
+
+<Warning>
+**Important Safety Considerations:**
+
+1. **Remove wheels or elevate car**: Always calibrate with wheels off the ground or removed
+2. **Start with conservative values**: Begin near the center position (370) and make small adjustments
+3. **Never force hardware**: If a servo buzzes or strains, immediately reduce the PWM value
+4. **ESC calibration**: Some ESCs require a special calibration sequence (full throttle -> connect power -> zero throttle)
+5. **Test incrementally**: Make small changes (±10-20 PWM units) to avoid sudden movements
+</Warning>
+
+## Troubleshooting
+
+### Servo doesn't move
+
+- Verify the channel number is correct
+- Check physical connections to the PCA9685
+- Ensure the PCA9685 has external power connected
+- Try different PWM values (some servos respond to different ranges)
+
+### "No such file or directory" error
+
+- Ensure I2C is enabled on your Raspberry Pi: `sudo raspi-config`
+- Install I2C tools: `sudo apt-get install i2c-tools`
+- Verify PCA9685 is detected: `i2cdetect -y 1`
+
+### Servo jitters or buzzes
+
+- You may be at the limit of the servo's range
+- Reduce the PWM value to a more conservative setting
+- Check that external power supply provides sufficient current
+
+### Arduino not found
+
+- Verify Arduino has Firmata firmware installed
+- Check USB connection and permissions
+- Install pyFirmata: `pip install pyFirmata`
+
+## Next Steps
+
+After calibration:
+
+1. Update your `myconfig.py` with the calibrated values
+2. Test your car with `python manage.py drive`
+3. Verify steering and throttle respond correctly
+4. Collect training data by driving manually
+5. Train your first model with [`donkey train`](/cli/train)

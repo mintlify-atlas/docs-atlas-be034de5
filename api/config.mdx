@@ -1,0 +1,559 @@
+---
+title: Config
+description: Configuration system for managing Donkeycar settings
+---
+
+The `Config` class manages configuration for your Donkeycar. It loads settings from Python files (`config.py` and `myconfig.py`) and makes them available as attributes.
+
+## Overview
+
+Donkeycar uses a two-file configuration system:
+
+1. **config.py** - Default settings that come with Donkeycar templates
+2. **myconfig.py** - Your personal overrides that take precedence
+
+This allows you to update Donkeycar without losing your custom settings.
+
+```python
+import donkeycar as dk
+
+# Load config from current directory
+cfg = dk.load_config()
+
+# Access config values
+print(cfg.CAMERA_TYPE)      # 'PICAM'
+print(cfg.IMAGE_W)          # 160
+print(cfg.DRIVE_LOOP_HZ)    # 20
+```
+
+## Loading Configuration
+
+### `load_config(config_path=None, myconfig="myconfig.py")`
+
+The primary function to load configuration.
+
+<ParamField path="config_path" type="str" default="None">
+  Path to config.py file. If None, searches for config.py in the current working directory.
+</ParamField>
+
+<ParamField path="myconfig" type="str" default="myconfig.py">
+  Filename of personal config overrides. Looked for in the same directory as config.py.
+</ParamField>
+
+**Returns:**
+
+<ResponseField name="cfg" type="Config">
+  Config instance with all settings loaded as attributes
+</ResponseField>
+
+**Example: Default Loading**
+
+```python
+import donkeycar as dk
+
+# Load from current directory
+# Reads ./config.py and ./myconfig.py
+cfg = dk.load_config()
+```
+
+**Example: Specify Config Path**
+
+```python
+import donkeycar as dk
+
+# Load from specific directory
+cfg = dk.load_config(config_path='/home/pi/mycar/config.py')
+```
+
+**Example: Custom Override File**
+
+```python
+import donkeycar as dk
+
+# Use a different override file
+cfg = dk.load_config(myconfig='myconfig_dev.py')
+```
+
+**Example: From manage.py**
+
+```python
+# In your car's manage.py
+if __name__ == '__main__':
+    args = docopt(__doc__)
+    cfg = dk.load_config(myconfig=args['--myconfig'])
+    
+    if args['drive']:
+        drive(cfg, model_path=args['--model'])
+```
+
+## Config Class
+
+### `from_pyfile(filename)`
+
+Load configuration from a Python file.
+
+<ParamField path="filename" type="str" required>
+  Path to the Python file containing configuration variables
+</ParamField>
+
+**Returns:**
+
+<ResponseField name="success" type="bool">
+  True if file was loaded successfully
+</ResponseField>
+
+```python
+from donkeycar.config import Config
+
+cfg = Config()
+cfg.from_pyfile('/home/pi/mycar/config.py')
+
+# Access loaded values
+print(cfg.CAMERA_TYPE)
+```
+
+<Note>
+  Only variables in UPPER_CASE are loaded from the file. This convention separates configuration from code.
+</Note>
+
+### `from_object(obj)`
+
+Load configuration from a Python object (module, class, etc).
+
+<ParamField path="obj" type="object" required>
+  Object containing configuration attributes
+</ParamField>
+
+```python
+from donkeycar.config import Config
+import types
+
+# Create a module-like object
+my_config = types.ModuleType('my_config')
+my_config.CAMERA_TYPE = 'WEBCAM'
+my_config.IMAGE_W = 160
+my_config.IMAGE_H = 120
+
+cfg = Config()
+cfg.from_object(my_config)
+
+print(cfg.CAMERA_TYPE)  # 'WEBCAM'
+```
+
+### `from_dict(d, keys=[])`
+
+Update configuration from a dictionary.
+
+<ParamField path="d" type="dict" required>
+  Dictionary of configuration key-value pairs
+</ParamField>
+
+<ParamField path="keys" type="list" default="[]">
+  Optional list of keys to update. If empty, all UPPER_CASE keys are updated.
+</ParamField>
+
+```python
+from donkeycar.config import Config
+
+cfg = Config()
+cfg.CAMERA_TYPE = 'PICAM'
+
+# Override with dictionary
+cfg.from_dict({
+    'CAMERA_TYPE': 'WEBCAM',
+    'IMAGE_W': 320,
+    'IMAGE_H': 240
+})
+
+print(cfg.CAMERA_TYPE)  # 'WEBCAM'
+```
+
+**Example: Selective Override**
+
+```python
+cfg = Config()
+cfg.from_pyfile('config.py')
+
+# Only override specific keys
+cfg.from_dict(
+    {'CAMERA_TYPE': 'WEBCAM', 'IMAGE_W': 320, 'IMAGE_H': 240},
+    keys=['CAMERA_TYPE']  # Only update CAMERA_TYPE
+)
+```
+
+### `show()`
+
+Print all configuration values to console.
+
+```python
+import donkeycar as dk
+
+cfg = dk.load_config()
+cfg.show()
+
+# Output:
+# CAMERA_TYPE : PICAM
+# IMAGE_W : 160
+# IMAGE_H : 120
+# DRIVE_LOOP_HZ : 20
+# ...
+```
+
+### `__str__()`
+
+Get configuration as a string (list of tuples).
+
+```python
+import donkeycar as dk
+
+cfg = dk.load_config()
+print(str(cfg))
+
+# Output:
+# [('CAMERA_TYPE', 'PICAM'), ('IMAGE_W', 160), ('IMAGE_H', 120), ...]
+```
+
+### `to_pyfile(path)`
+
+Save current configuration to a Python file.
+
+<ParamField path="path" type="str" required>
+  Path where the configuration file should be written
+</ParamField>
+
+```python
+import donkeycar as dk
+
+cfg = dk.load_config()
+
+# Modify some values
+cfg.CAMERA_TYPE = 'WEBCAM'
+cfg.IMAGE_W = 320
+
+# Save to new file
+cfg.to_pyfile('/home/pi/mycar/config_backup.py')
+```
+
+**Generated file format:**
+
+```python
+# config_backup.py
+CAMERA_TYPE = "WEBCAM"
+IMAGE_W = 320
+IMAGE_H = 120
+DRIVE_LOOP_HZ = 20
+# ... all other config values
+```
+
+## Configuration System
+
+### config.py vs myconfig.py
+
+The two-file system separates defaults from customization:
+
+**config.py** (template defaults)
+```python
+# Default configuration from template
+CAMERA_TYPE = "PICAM"
+IMAGE_W = 160
+IMAGE_H = 120
+DRIVE_LOOP_HZ = 20
+JOYSTICK_MAX_THROTTLE = 0.5
+```
+
+**myconfig.py** (your overrides)
+```python
+# Your personal overrides
+CAMERA_TYPE = "WEBCAM"  # Override: using webcam
+IMAGE_W = 320           # Override: higher resolution
+IMAGE_H = 240
+# DRIVE_LOOP_HZ not specified, uses default of 20
+# JOYSTICK_MAX_THROTTLE not specified, uses default of 0.5
+```
+
+**Result when loaded:**
+```python
+import donkeycar as dk
+cfg = dk.load_config()
+
+print(cfg.CAMERA_TYPE)           # 'WEBCAM' (from myconfig.py)
+print(cfg.IMAGE_W)               # 320 (from myconfig.py)
+print(cfg.DRIVE_LOOP_HZ)         # 20 (from config.py)
+print(cfg.JOYSTICK_MAX_THROTTLE) # 0.5 (from config.py)
+```
+
+### Common Configuration Options
+
+#### Camera Settings
+
+```python
+# Camera type
+CAMERA_TYPE = "PICAM"  # PICAM, WEBCAM, CVCAM, CSIC, V4L, MOCK
+
+# Image resolution
+IMAGE_W = 160
+IMAGE_H = 120
+IMAGE_DEPTH = 3  # 3=RGB, 1=Grayscale
+
+# Camera options
+CAMERA_FRAMERATE = 20
+CAMERA_VFLIP = False
+CAMERA_HFLIP = False
+```
+
+#### Drive Train Settings
+
+```python
+# Drive train type
+DRIVE_TRAIN_TYPE = "PWM_STEERING_THROTTLE"
+
+# PWM Calibration values (from 'donkey calibrate')
+PWM_STEERING_THROTTLE = {
+    "PWM_STEERING_PIN": "PCA9685.1:40.1",
+    "PWM_THROTTLE_PIN": "PCA9685.1:40.0",
+    "STEERING_LEFT_PWM": 460,
+    "STEERING_RIGHT_PWM": 290,
+    "THROTTLE_FORWARD_PWM": 500,
+    "THROTTLE_STOPPED_PWM": 370,
+    "THROTTLE_REVERSE_PWM": 220,
+}
+```
+
+#### Vehicle Loop Settings
+
+```python
+# Drive loop frequency
+DRIVE_LOOP_HZ = 20  # Updates per second
+
+# Max loops for testing
+MAX_LOOPS = None  # None = run forever
+```
+
+#### Joystick/Controller Settings
+
+```python
+# Enable joystick by default
+USE_JOYSTICK_AS_DEFAULT = True
+
+# Controller type
+CONTROLLER_TYPE = 'xbox'  # ps3, ps4, xbox, nimbus, etc.
+
+# Throttle limiting
+JOYSTICK_MAX_THROTTLE = 0.5  # 50% max speed
+JOYSTICK_STEERING_SCALE = 1.0
+JOYSTICK_DEADZONE = 0.01
+```
+
+#### Training Settings
+
+```python
+# Model type
+DEFAULT_MODEL_TYPE = 'linear'  # linear, categorical
+
+# Training parameters
+BATCH_SIZE = 128
+MAX_EPOCHS = 100
+TRAIN_TEST_SPLIT = 0.8
+LEARNING_RATE = 0.001
+
+# Early stopping
+USE_EARLY_STOP = True
+EARLY_STOP_PATIENCE = 5
+```
+
+#### Recording Settings
+
+```python
+# Auto-record when throttle > 0
+AUTO_RECORD_ON_THROTTLE = True
+
+# Record during AI driving (careful!)
+RECORD_DURING_AI = False
+
+# Create new directory each session
+AUTO_CREATE_NEW_TUB = False
+
+# Data storage
+DATA_PATH = os.path.join(CAR_PATH, 'data')
+MODELS_PATH = os.path.join(CAR_PATH, 'models')
+```
+
+#### AI/Autopilot Settings
+
+```python
+# Throttle multiplier in AI mode
+AI_THROTTLE_MULT = 1.0
+
+# Launch control
+AI_LAUNCH_DURATION = 0.0  # Seconds
+AI_LAUNCH_THROTTLE = 0.0  # Boost throttle
+AI_LAUNCH_ENABLE_BUTTON = 'R2'
+```
+
+## Usage Examples
+
+### Example: Basic Drive Script
+
+```python
+import donkeycar as dk
+from donkeycar.parts.camera import PiCamera
+
+def drive(cfg):
+    V = dk.vehicle.Vehicle()
+    
+    # Use config values
+    cam = PiCamera(
+        image_w=cfg.IMAGE_W,
+        image_h=cfg.IMAGE_H,
+        image_d=cfg.IMAGE_DEPTH,
+        vflip=cfg.CAMERA_VFLIP
+    )
+    V.add(cam, outputs=['cam/image_array'], threaded=True)
+    
+    # Start at configured frequency
+    V.start(rate_hz=cfg.DRIVE_LOOP_HZ)
+
+if __name__ == '__main__':
+    cfg = dk.load_config()
+    drive(cfg)
+```
+
+### Example: Environment-Specific Configs
+
+```python
+import os
+import donkeycar as dk
+
+# Load different config based on environment
+env = os.getenv('ENV', 'production')
+
+if env == 'development':
+    cfg = dk.load_config(myconfig='myconfig_dev.py')
+elif env == 'testing':
+    cfg = dk.load_config(myconfig='myconfig_test.py')
+else:
+    cfg = dk.load_config()  # Use myconfig.py
+
+print(f"Running in {env} mode")
+print(f"Camera: {cfg.CAMERA_TYPE}")
+```
+
+### Example: Runtime Overrides
+
+```python
+import donkeycar as dk
+
+# Load base config
+cfg = dk.load_config()
+
+# Override for this session
+if using_simulator:
+    cfg.CAMERA_TYPE = 'MOCK'
+    cfg.DRIVE_TRAIN_TYPE = 'MOCK'
+    cfg.DONKEY_GYM = True
+
+# Override from command line
+import sys
+if '--debug' in sys.argv:
+    cfg.MAX_LOOPS = 100
+    cfg.VERBOSE_TRAIN = True
+```
+
+### Example: Config Validation
+
+```python
+import donkeycar as dk
+import sys
+
+def validate_config(cfg):
+    """Check for common configuration errors"""
+    errors = []
+    
+    # Check required settings
+    if not hasattr(cfg, 'CAMERA_TYPE'):
+        errors.append("CAMERA_TYPE not set")
+    
+    # Validate values
+    if cfg.IMAGE_W <= 0 or cfg.IMAGE_H <= 0:
+        errors.append("Invalid image dimensions")
+    
+    if cfg.DRIVE_LOOP_HZ <= 0 or cfg.DRIVE_LOOP_HZ > 100:
+        errors.append("Invalid DRIVE_LOOP_HZ (must be 1-100)")
+    
+    # Check for deprecated settings
+    if hasattr(cfg, 'OLD_SETTING'):
+        errors.append("OLD_SETTING is deprecated, use NEW_SETTING")
+    
+    if errors:
+        print("Configuration errors:")
+        for error in errors:
+            print(f"  - {error}")
+        sys.exit(1)
+
+cfg = dk.load_config()
+validate_config(cfg)
+```
+
+## Best Practices
+
+### Keep myconfig.py Minimal
+
+Only override what you need to change:
+
+```python
+# myconfig.py - Good
+CAMERA_TYPE = "WEBCAM"  # Only changed value
+JOYSTICK_MAX_THROTTLE = 0.3
+```
+
+```python
+# myconfig.py - Avoid
+# Don't copy entire config.py, only include changes
+CAMERA_TYPE = "WEBCAM"
+IMAGE_W = 160  # Unnecessary if same as default
+IMAGE_H = 120  # Unnecessary if same as default
+# ... 800 more lines ...
+```
+
+### Document Your Overrides
+
+Add comments explaining why you changed values:
+
+```python
+# myconfig.py
+
+# Using webcam instead of Pi Camera
+CAMERA_TYPE = "WEBCAM"
+
+# Reduced max throttle for indoor testing
+JOYSTICK_MAX_THROTTLE = 0.3
+
+# Higher resolution for better obstacle detection
+IMAGE_W = 320
+IMAGE_H = 240
+```
+
+### Version Control
+
+Track myconfig.py in git to preserve your settings:
+
+```bash
+# In your car directory
+git add myconfig.py
+git commit -m "Add custom config for webcam setup"
+```
+
+### Backup Before Updates
+
+Before updating Donkeycar:
+
+```bash
+cp myconfig.py myconfig.py.backup
+```
+
+## See Also
+
+- [Vehicle](/api/vehicle) - Using config in the vehicle
+- [Create Car](/guides/creating-application) - Initial configuration
+- [Calibrate](/guides/calibration) - Calibrating PWM values
+- [Training](/training/deep-learning) - Training configuration options

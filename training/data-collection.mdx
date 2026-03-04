@@ -1,0 +1,319 @@
+---
+title: Data Collection
+description: Collecting and managing training data with Donkeycar tubs
+---
+
+High-quality training data is essential for creating effective deep learning autopilots. Donkeycar stores driving data in **tubs** - directories containing sensor readings, images, and control inputs.
+
+## What is a Tub?
+
+A tub is Donkeycar's data storage format that records:
+- Camera images (as JPG files)
+- Steering and throttle inputs
+- Sensor data (IMU, GPS, odometry)
+- Timestamps
+- Metadata
+
+### Tub Structure
+
+```
+data/
+  tub_1_23-03-15/
+    meta.json           # Tub metadata (inputs, types)
+    manifest.json       # Record manifest
+    images/             # Camera images
+      0_cam-image_array_.jpg
+      1_cam-image_array_.jpg
+      ...
+```
+
+## Collecting Training Data
+
+### Basic Data Collection
+
+Start your car in user mode to collect data:
+
+```bash
+python manage.py drive
+```
+
+Navigate to the web interface at `http://<your-car-ip>:8887`:
+
+1. **Start Recording** - Click the recording button or toggle via joystick
+2. **Drive Manually** - Use keyboard, gamepad, or web interface
+3. **Stop Recording** - Click recording button again when done
+
+### Recording Controls
+
+**Keyboard (Web UI):**
+- `i/k` - Throttle forward/backward
+- `j/l` - Steer left/right  
+- `r` - Toggle recording
+
+**Gamepad:**
+- Configure buttons in `myconfig.py`
+- Default: Right bumper toggles recording
+
+### Auto-Recording
+
+Enable automatic recording when throttle is applied:
+
+```python
+# myconfig.py
+AUTO_RECORD_ON_THROTTLE = True
+```
+
+## Data Collection Best Practices
+
+### Quality Over Quantity
+
+**Good driving data:**
+- Smooth, consistent steering
+- Varied track positions (center, left, right)
+- Recovery examples (moving from edge back to center)
+- Multiple laps with different lighting
+
+**Avoid:**
+- Jerky, erratic steering
+- Stopped or very slow sections
+- Crashes or off-track driving
+- Excessive overfitting to one line
+
+### How Much Data?
+
+| Track Complexity | Recommended Frames | Drive Time (20 FPS) |
+|------------------|-------------------|---------------------|
+| Simple oval | 5,000-10,000 | 4-8 minutes |
+| Medium circuit | 10,000-20,000 | 8-17 minutes |
+| Complex track | 20,000-40,000 | 17-33 minutes |
+
+### Diverse Examples
+
+Collect data showing:
+- **Centerline driving** - Smooth laps staying centered
+- **Recovery maneuvers** - Moving from edges back to center
+- **Different positions** - Left side, right side of track
+- **Various speeds** - Fast straightaways, slow corners
+
+## TubWriter Class
+
+Donkeycar's `TubWriter` part handles data recording:
+
+```python
+from donkeycar.parts.tub_v2 import TubWriter
+
+# Create tub writer
+tub_writer = TubWriter(
+    base_path='~/mycar/data/tub_1',
+    inputs=['cam/image_array', 'user/steering', 'user/throttle'],
+    types=['image_array', 'float', 'float']
+)
+
+# In vehicle loop
+V.add(tub_writer, 
+      inputs=['cam/image_array', 'steering', 'throttle'],
+      outputs=['tub/num_records'],
+      run_condition='recording')
+```
+
+**Key parameters:**
+- `base_path` - Directory to store tub data
+- `inputs` - List of data keys to record
+- `types` - Data types for each input
+- `run_condition` - Only runs when condition is True
+
+**Supported types:**
+- `image_array` - Numpy arrays saved as JPG
+- `float` - Floating point numbers
+- `int` - Integers
+- `str` - Strings
+- `boolean` - Boolean values
+- `list`, `vector` - Lists of values
+
+### Writing Records
+
+The TubWriter automatically saves records each frame:
+
+```python
+# Vehicle loop calls this automatically
+def run(self, *args):
+    """Save data to tub"""
+    record = dict(zip(self.tub.inputs, args))
+    self.tub.write_record(record)
+    return self.tub.manifest.current_index
+```
+
+Each record contains:
+```json
+{
+  "cam/image_array": "42_cam-image_array_.jpg",
+  "user/steering": 0.15,
+  "user/throttle": 0.35,
+  "_timestamp_ms": 1234567890,
+  "_index": 42
+}
+```
+
+## Managing Tubs
+
+### View Tub Data
+
+Inspect tub contents:
+
+```bash
+# Show tub summary
+donkey tubhist data/tub_1
+
+# Show detailed statistics  
+donkey tubhist data/tub_1 --detail
+```
+
+### Clean Bad Data
+
+Remove problematic frames:
+
+```bash
+donkey tubclean data/tub_1
+```
+
+This opens an interface to:
+- View images and telemetry
+- Delete individual frames
+- Remove ranges of frames
+- Filter by criteria
+
+### Combine Multiple Tubs
+
+Merge tubs for training:
+
+```bash
+# Train on multiple tubs
+donkey train --tubs data/tub_1,data/tub_2,data/tub_3 \
+  --model models/pilot.h5
+```
+
+### Tub Commands
+
+```bash
+# Check tub integrity
+donkey tubcheck data/tub_1
+
+# Plot steering/throttle distribution
+donkey tubplot data/tub_1
+
+# Export to CSV
+donkey tubcsv data/tub_1
+```
+
+## Tub Format (V2)
+
+Donkeycar uses an efficient tub format:
+
+**meta.json:**
+```json
+{
+  "inputs": ["cam/image_array", "user/steering", "user/throttle"],
+  "types": ["image_array", "float", "float"],
+  "start": 1678901234.5
+}
+```
+
+**manifest.json:**
+```json
+{
+  "current_index": 1523,
+  "deleted_indexes": [45, 67, 89],
+  "session_id": "abc123"
+}
+```
+
+**Images stored separately:**
+- Reduces JSON file size
+- Enables efficient image loading
+- Supports lazy loading during training
+
+## Data Quality Tips
+
+### Lighting Conditions
+
+- Collect data in similar lighting to race conditions
+- If lighting varies, collect examples in multiple conditions
+- Avoid extreme shadows or glare
+
+### Track Coverage
+
+- Drive both directions if track is reversible
+- Include all turns and track sections
+- Don't over-represent easy sections
+
+### Recovery Examples
+
+20% of data should show recovery:
+1. Position car near track edge
+2. Start recording
+3. Steer back toward center
+4. Stop recording
+5. Repeat at different locations
+
+### Throttle Consistency
+
+For best results:
+- Maintain consistent speed throughout laps
+- Match training speed to desired race speed
+- Consider using constant throttle mode
+
+## Advanced: Custom Data Recording
+
+### Recording Additional Sensors
+
+```python
+# myconfig.py
+inputs = [
+    'cam/image_array',
+    'user/steering', 
+    'user/throttle',
+    'imu/acl_x', 'imu/acl_y', 'imu/acl_z',  # IMU data
+    'gps/latitude', 'gps/longitude'          # GPS data
+]
+
+types = [
+    'image_array',
+    'float', 'float',
+    'float', 'float', 'float',
+    'float', 'float'
+]
+
+# In manage.py
+tub_writer = TubWriter(tub_path, inputs=inputs, types=types)
+```
+
+### Filtering During Recording
+
+Only record when conditions are met:
+
+```python
+class ConditionalRecording:
+    def __init__(self, min_throttle=0.1):
+        self.min_throttle = min_throttle
+        
+    def run(self, recording, throttle):
+        # Only record if moving
+        if abs(throttle) < self.min_throttle:
+            return False
+        return recording
+
+V.add(ConditionalRecording(), 
+      inputs=['recording', 'user/throttle'],
+      outputs=['recording'])
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Train Deep Learning Model" icon="brain" href="/training/deep-learning">
+    Use collected data to train a neural network autopilot
+  </Card>
+  <Card title="Data Augmentation" icon="image" href="/training/deep-learning#data-augmentation">
+    Learn how to augment data during training
+  </Card>
+</CardGroup>

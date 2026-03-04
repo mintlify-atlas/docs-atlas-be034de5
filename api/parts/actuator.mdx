@@ -1,0 +1,367 @@
+---
+title: Actuator Parts API
+description: Motor and servo control parts for throttle and steering
+---
+
+Actuator parts control motors and servos to translate pilot commands into physical motion.
+
+## PWM Controllers
+
+### PulseController
+
+Generic PWM pulse controller using pin providers.
+
+**Constructor:**
+
+```python
+PulseController(pwm_pin, pwm_scale=1.0, pwm_inverted=False)
+```
+
+<ParamField path="pwm_pin" type="PwmPin">
+  PWM pin provider (see donkeycar.parts.pins)
+</ParamField>
+
+<ParamField path="pwm_scale" type="float" default="1.0">
+  Scaling factor for 12-bit pulse values to compensate for non-standard PWM frequencies
+</ParamField>
+
+<ParamField path="pwm_inverted" type="bool" default="false">
+  Invert the duty cycle
+</ParamField>
+
+**Methods:**
+
+<ParamField path="set_pulse" type="(pulse: int) -> None">
+  Set PWM pulse width using 12-bit value (0-4095)
+</ParamField>
+
+<ParamField path="run" type="(pulse: int) -> None">
+  Donkeycar part interface - sets pulse width
+</ParamField>
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.pins import PCA9685PwmPin
+from donkeycar.parts.actuator import PulseController
+
+# Create PWM pin
+pwm_pin = PCA9685PwmPin(channel=1, frequency=60)
+
+# Create pulse controller
+controller = PulseController(pwm_pin)
+
+# Set pulse
+controller.set_pulse(370)  # neutral position
+```
+
+### PCA9685 (Deprecated)
+
+Legacy PCA9685 PWM controller. Use PulseController instead.
+
+**Constructor:**
+
+```python
+PCA9685(channel, address=0x40, frequency=60, busnum=None, init_delay=0.1)
+```
+
+<ParamField path="channel" type="int">
+  PWM channel (0-15)
+</ParamField>
+
+<ParamField path="address" type="int" default="0x40">
+  I2C address
+</ParamField>
+
+<ParamField path="frequency" type="int" default="60">
+  PWM frequency in Hz
+</ParamField>
+
+## Steering Controllers
+
+### PWMSteering
+
+Converts steering angles to PWM pulses.
+
+**Constructor:**
+
+```python
+PWMSteering(controller, left_pulse, right_pulse)
+```
+
+<ParamField path="controller" type="PulseController">
+  Pulse controller with set_pulse() method
+</ParamField>
+
+<ParamField path="left_pulse" type="int">
+  PWM pulse for full left steering
+</ParamField>
+
+<ParamField path="right_pulse" type="int">
+  PWM pulse for full right steering
+</ParamField>
+
+**Methods:**
+
+<ParamField path="run" type="(angle: float) -> None">
+  Convert angle (-1 to 1) to PWM pulse and apply
+</ParamField>
+
+<ParamField path="run_threaded" type="(angle: float) -> None">
+  Set pulse for threaded operation
+</ParamField>
+
+<ParamField path="shutdown" type="() -> None">
+  Center steering and stop
+</ParamField>
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.actuator import PWMSteering, PulseController
+
+steering_controller = PulseController(pwm_pin)
+steering = PWMSteering(controller=steering_controller,
+                       left_pulse=cfg.STEERING_LEFT_PWM,
+                       right_pulse=cfg.STEERING_RIGHT_PWM)
+
+V.add(steering, inputs=['pilot/angle'])
+```
+
+## Throttle Controllers
+
+### PWMThrottle
+
+Converts throttle values to PWM pulses for ESC control.
+
+**Constructor:**
+
+```python
+PWMThrottle(controller, max_pulse, min_pulse, zero_pulse)
+```
+
+<ParamField path="controller" type="PulseController">
+  Pulse controller with set_pulse() method
+</ParamField>
+
+<ParamField path="max_pulse" type="int">
+  PWM pulse for full forward throttle
+</ParamField>
+
+<ParamField path="min_pulse" type="int">
+  PWM pulse for full reverse throttle
+</ParamField>
+
+<ParamField path="zero_pulse" type="int">
+  PWM pulse for stopped/neutral
+</ParamField>
+
+**Methods:**
+
+<ParamField path="run" type="(throttle: float) -> None">
+  Convert throttle (-1 to 1) to PWM pulse and apply
+</ParamField>
+
+<ParamField path="run_threaded" type="(throttle: float) -> None">
+  Set pulse for threaded operation
+</ParamField>
+
+<ParamField path="shutdown" type="() -> None">
+  Stop throttle and release
+</ParamField>
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.actuator import PWMThrottle, PulseController
+
+throttle_controller = PulseController(pwm_pin)
+throttle = PWMThrottle(controller=throttle_controller,
+                       max_pulse=cfg.THROTTLE_FORWARD_PWM,
+                       min_pulse=cfg.THROTTLE_REVERSE_PWM,
+                       zero_pulse=cfg.THROTTLE_STOPPED_PWM)
+
+V.add(throttle, inputs=['pilot/throttle'])
+```
+
+## Differential Drive
+
+### TwoWheelSteeringThrottle
+
+Converts steering and throttle to individual wheel motor speeds.
+
+**Methods:**
+
+<ParamField path="run" type="(throttle: float, steering: float) -> (float, float)">
+  Returns (left_motor_speed, right_motor_speed) tuple
+</ParamField>
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.actuator import TwoWheelSteeringThrottle
+
+mixer = TwoWheelSteeringThrottle()
+V.add(mixer,
+      inputs=['pilot/throttle', 'pilot/angle'],
+      outputs=['left_motor_speed', 'right_motor_speed'])
+```
+
+### L298N_HBridge_3pin
+
+DC motor controller using L298N H-bridge with 3-pin configuration.
+
+**Constructor:**
+
+```python
+L298N_HBridge_3pin(pin_forward, pin_backward, pwm_pin, zero_throttle=0, max_duty=0.9)
+```
+
+<ParamField path="pin_forward" type="OutputPin">
+  GPIO pin for forward direction
+</ParamField>
+
+<ParamField path="pin_backward" type="OutputPin">
+  GPIO pin for backward direction
+</ParamField>
+
+<ParamField path="pwm_pin" type="PwmPin">
+  PWM pin for motor speed control
+</ParamField>
+
+<ParamField path="zero_throttle" type="float" default="0">
+  Throttle deadzone threshold
+</ParamField>
+
+<ParamField path="max_duty" type="float" default="0.9">
+  Maximum duty cycle (0 to 1)
+</ParamField>
+
+**Methods:**
+
+<ParamField path="run" type="(throttle: float) -> None">
+  Set motor speed and direction from throttle (-1 to 1)
+</ParamField>
+
+### L298N_HBridge_2pin
+
+DC motor controller using L298N H-bridge with 2-pin PWM configuration.
+
+**Constructor:**
+
+```python
+L298N_HBridge_2pin(pin_forward, pin_backward, zero_throttle=0, max_duty=0.9)
+```
+
+<ParamField path="pin_forward" type="PwmPin">
+  PWM pin for forward control
+</ParamField>
+
+<ParamField path="pin_backward" type="PwmPin">
+  PWM pin for backward control
+</ParamField>
+
+<ParamField path="zero_throttle" type="float" default="0">
+  Throttle deadzone threshold
+</ParamField>
+
+<ParamField path="max_duty" type="float" default="0.9">
+  Maximum duty cycle (0 to 1)
+</ParamField>
+
+**Methods:**
+
+<ParamField path="run" type="(throttle: float) -> None">
+  Set motor speed and direction from throttle (-1 to 1)
+</ParamField>
+
+## Specialized Controllers
+
+### VESC
+
+VESC motor controller for electric skateboards.
+
+**Constructor:**
+
+```python
+VESC(serial_port, percent=0.2, has_sensor=False, start_heartbeat=True,
+     baudrate=115200, timeout=0.05, steering_scale=1.0, steering_offset=0.0)
+```
+
+<ParamField path="serial_port" type="str">
+  Serial port path (e.g., /dev/ttyACM1)
+</ParamField>
+
+<ParamField path="percent" type="float" default="0.2">
+  Maximum duty cycle percentage (-1 to 1)
+</ParamField>
+
+<ParamField path="steering_scale" type="float" default="1.0">
+  Steering servo scaling factor
+</ParamField>
+
+<ParamField path="steering_offset" type="float" default="0.0">
+  Steering servo offset
+</ParamField>
+
+**Installation:**
+
+```bash
+pip install git+https://github.com/LiamBindle/PyVESC.git@master
+```
+
+**Methods:**
+
+<ParamField path="run" type="(angle: float, throttle: float) -> None">
+  Set servo angle and motor duty cycle
+</ParamField>
+
+## Configuration
+
+Typical actuator configuration in `myconfig.py`:
+
+```python
+# PWM Configuration
+STEERING_CHANNEL = 1
+STEERING_LEFT_PWM = 460
+STEERING_RIGHT_PWM = 290
+
+THROTTLE_CHANNEL = 0  
+THROTTLE_FORWARD_PWM = 500
+THROTTLE_STOPPED_PWM = 370
+THROTTLE_REVERSE_PWM = 220
+
+# PCA9685
+PCA9685_I2C_ADDR = 0x40
+PCA9685_I2C_BUSNUM = 1
+```
+
+## Integration Example
+
+From templates like `complete.py`:
+
+```python
+from donkeycar.parts.actuator import PulseController, PWMSteering, PWMThrottle
+from donkeycar.parts.pins import PCA9685PwmPin
+
+# Create PWM pins
+steering_pin = PCA9685PwmPin(channel=cfg.STEERING_CHANNEL, frequency=60)
+throttle_pin = PCA9685PwmPin(channel=cfg.THROTTLE_CHANNEL, frequency=60)
+
+# Create controllers
+steering_controller = PulseController(steering_pin)
+throttle_controller = PulseController(throttle_pin)
+
+# Create steering and throttle parts
+steering = PWMSteering(controller=steering_controller,
+                       left_pulse=cfg.STEERING_LEFT_PWM,
+                       right_pulse=cfg.STEERING_RIGHT_PWM)
+
+throttle = PWMThrottle(controller=throttle_controller,
+                       max_pulse=cfg.THROTTLE_FORWARD_PWM,
+                       min_pulse=cfg.THROTTLE_REVERSE_PWM,
+                       zero_pulse=cfg.THROTTLE_STOPPED_PWM)
+
+V.add(steering, inputs=['pilot/angle'])
+V.add(throttle, inputs=['pilot/throttle'])
+```

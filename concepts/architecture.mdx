@@ -1,0 +1,303 @@
+---
+title: 'Architecture Overview'
+description: 'Understanding the modular architecture and design philosophy of the Donkeycar framework'
+---
+
+Donkeycar is built on a modular, event-driven architecture that emphasizes simplicity, flexibility, and extensibility. The framework allows you to construct autonomous vehicles by composing reusable components called **parts** into a **vehicle loop**.
+
+## Design Philosophy
+
+The Donkeycar architecture follows several key principles:
+
+### Modularity First
+
+Every capability in Donkeycar is implemented as a self-contained **part**. Parts can be:
+- Hardware interfaces (cameras, motors, sensors)
+- Processing components (image transforms, neural networks)
+- Control logic (PID controllers, state machines)
+- Data handlers (logging, recording)
+
+This modular approach means you can mix and match components, swap implementations, and extend functionality without modifying the core framework.
+
+### Data Flow Architecture
+
+Donkeycar uses a **shared memory** model where parts communicate through named channels:
+
+```python
+# Parts produce outputs to named channels
+V.add(camera, inputs=[], outputs=['cam/image_array'], threaded=True)
+
+# Other parts consume those outputs as inputs
+V.add(model, inputs=['cam/image_array'], outputs=['pilot/angle', 'pilot/throttle'])
+```
+
+This approach provides:
+- **Loose coupling**: Parts don't need to know about each other
+- **Easy debugging**: You can inspect any value in the pipeline
+- **Simple composition**: Connect parts by matching input/output names
+
+### Synchronous Loop with Threading
+
+The vehicle runs a **synchronous drive loop** that executes all parts sequentially at a fixed rate (typically 20 Hz). This provides:
+- Predictable execution order
+- Consistent timing
+- Easy reasoning about system behavior
+
+For I/O-bound operations (cameras, network, sensors), parts can run in separate threads while the main loop polls their latest values.
+
+## Core Components
+
+### Vehicle Class
+
+The `Vehicle` class (in `donkeycar/vehicle.py:61`) is the heart of the framework:
+
+```python
+class Vehicle:
+    def __init__(self, mem=None):
+        if not mem:
+            mem = Memory()
+        self.mem = mem
+        self.parts = []
+        self.on = True
+        self.threads = []
+        self.profiler = PartProfiler()
+```
+
+It manages:
+- The **Memory** instance (shared data store)
+- A list of **parts** with their input/output mappings
+- Threading for background parts
+- Performance profiling
+
+### Memory System
+
+The `Memory` class (in `donkeycar/memory.py:9`) provides a simple key-value store:
+
+```python
+class Memory:
+    """A convenience class to save key/value pairs."""
+    def __init__(self, *args, **kw):
+        self.d = {}
+```
+
+Parts read and write to Memory using named channels like `'cam/image_array'`, `'user/angle'`, `'pilot/throttle'`, etc.
+
+### Parts
+
+Parts are Python classes or functions that implement either:
+- `run(*inputs)` - for synchronous execution
+- `run_threaded(*inputs)` - for threaded execution
+- `update()` - for background threads
+- `shutdown()` - for cleanup (optional)
+
+See the [Parts documentation](/concepts/parts) for details.
+
+### Templates
+
+Templates are pre-configured vehicle applications for common use cases:
+- **complete.py** - Full-featured autonomous car with ML autopilot
+- **basic.py** - Minimal car with camera and manual control
+- **path_follow.py** - Path following with odometry/GPS
+- **cv_control.py** - Computer vision-based control
+- **simulator.py** - For Donkey Gym simulation
+
+See the [Templates documentation](/concepts/templates) for details.
+
+## System Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Vehicle (Main Loop)                     │
+│  • Runs at configured rate_hz (e.g., 20 Hz)                 │
+│  • Executes all parts sequentially each iteration           │
+│  • Manages threading for background parts                   │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      Memory (Shared State)                   │
+│  • Key-value store for all data                             │
+│  • Channels: cam/image_array, user/angle, etc.              │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                 ┌────────────┼────────────┐
+                 ▼            ▼            ▼
+         ┌──────────┐  ┌──────────┐  ┌──────────┐
+         │  Part 1  │  │  Part 2  │  │  Part 3  │
+         │ (Camera) │  │  (Model) │  │ (Actuator)│
+         │          │  │          │  │          │
+         │ Outputs: │  │ Inputs:  │  │ Inputs:  │
+         │ cam/img  │  │ cam/img  │  │ steering │
+         │          │  │ Outputs: │  │ throttle │
+         │          │  │ steering │  │          │
+         │          │  │ throttle │  │          │
+         └──────────┘  └──────────┘  └──────────┘
+```
+
+## Execution Flow
+
+1. **Initialization**
+   - Create Vehicle instance
+   - Add parts with `V.add(part, inputs=[...], outputs=[...])`
+   - Parts are registered in order
+
+2. **Startup** (`V.start(rate_hz=20)`)
+   - Start background threads for threaded parts
+   - Enter main drive loop
+
+3. **Drive Loop** (each iteration)
+   - For each part:
+     - Check run condition (if specified)
+     - Get inputs from Memory
+     - Call `run()` or `run_threaded()`
+     - Put outputs into Memory
+   - Sleep to maintain target rate_hz
+
+4. **Shutdown**
+   - Call `shutdown()` on all parts
+   - Report performance profiling data
+
+<Info>
+The framework automatically handles the data flow between parts. You just need to match input names with output names, and the Vehicle orchestrates everything.
+</Info>
+
+## Threading Model
+
+### Synchronous Parts (default)
+
+```python
+V.add(part, inputs=['input1'], outputs=['output1'], threaded=False)
+```
+
+- Part's `run()` method is called in the main loop
+- Blocks until execution completes
+- Use for fast operations (< 50ms)
+
+### Threaded Parts
+
+```python
+V.add(part, inputs=['input1'], outputs=['output1'], threaded=True)
+```
+
+- Part's `update()` method runs in a background thread
+- Main loop calls `run_threaded()` to get latest output
+- Use for slow I/O (cameras, network, sensors)
+
+<Note>
+Threaded parts continuously update in the background while the main loop just reads their latest output via `run_threaded()`. This prevents slow operations from blocking the entire vehicle loop.
+</Note>
+
+## Run Conditions
+
+Parts can have conditional execution:
+
+```python
+V.add(pilot_model, 
+      inputs=['cam/image_array'], 
+      outputs=['pilot/angle', 'pilot/throttle'],
+      run_condition='run_pilot')  # Only runs when Memory['run_pilot'] == True
+```
+
+This enables:
+- User vs autopilot mode switching
+- Conditional data recording
+- Feature toggling
+- Button-triggered actions
+
+## Performance Profiling
+
+Donkeycar includes built-in profiling (see `vehicle.py:20`):
+
+```python
+class PartProfiler:
+    def profile_part(self, p):
+        self.records[p] = { "times" : [] }
+```
+
+When you stop the vehicle, it reports:
+- Execution time for each part (max, min, avg)
+- Percentile statistics (50%, 90%, 99%, 99.9%)
+- Identification of performance bottlenecks
+
+<Tip>
+Set `verbose=True` when starting the vehicle to see profiling data every 200 iterations and identify parts that are slowing down your loop.
+</Tip>
+
+## Configuration-Driven
+
+Donkeycar uses a configuration file (`myconfig.py`) to control behavior:
+
+```python
+DRIVE_LOOP_HZ = 20           # Main loop frequency
+CAMERA_TYPE = "PICAM"         # Hardware selection
+DEFAULT_MODEL_TYPE = "linear" # AI model type
+AI_THROTTLE_MULT = 1.0        # Autopilot throttle scaling
+```
+
+This makes it easy to:
+- Switch hardware without code changes
+- Tune parameters
+- Enable/disable features
+- Share configurations
+
+## Extensibility
+
+The architecture makes it easy to extend Donkeycar:
+
+### Adding New Parts
+
+```python
+class MyCustomPart:
+    def run(self, input_data):
+        # Process input
+        output_data = process(input_data)
+        return output_data
+
+V.add(MyCustomPart(), 
+      inputs=['some/input'], 
+      outputs=['my/output'])
+```
+
+### Creating Templates
+
+Templates are just Python scripts that compose parts:
+
+```python
+import donkeycar as dk
+
+def drive(cfg):
+    V = dk.vehicle.Vehicle()
+    # Add your parts
+    V.add(...)
+    V.start(rate_hz=cfg.DRIVE_LOOP_HZ)
+```
+
+### Swapping Implementations
+
+Because parts are loosely coupled, you can swap implementations:
+
+```python
+# Use different camera types
+if cfg.CAMERA_TYPE == "PICAM":
+    cam = PiCamera()
+elif cfg.CAMERA_TYPE == "WEBCAM":
+    cam = Webcam()
+
+# Same interface regardless
+V.add(cam, outputs=['cam/image_array'])
+```
+
+## Best Practices
+
+1. **Keep parts small and focused** - Each part should do one thing well
+2. **Use meaningful channel names** - Follow the convention `category/name` (e.g., `cam/image_array`, `pilot/angle`)
+3. **Make threaded parts for I/O** - Cameras, network, sensors should be threaded
+4. **Profile your loop** - Use verbose mode to identify bottlenecks
+5. **Handle shutdown gracefully** - Implement `shutdown()` to clean up resources
+
+## Next Steps
+
+- Learn about the [Vehicle Loop](/concepts/vehicle-loop) and how the drive cycle works
+- Understand [Parts](/concepts/parts) and how to create custom components
+- Explore [Templates](/concepts/templates) for different vehicle configurations
+- Study the [Memory](/concepts/memory) system and data flow

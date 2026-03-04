@@ -1,0 +1,438 @@
+---
+title: Deep Learning Models
+description: Train deep learning models with TensorFlow and PyTorch for autonomous driving
+---
+
+Donkeycar supports training deep learning models using both TensorFlow/Keras and PyTorch frameworks. These models learn to predict steering and throttle from camera images by analyzing recorded driving data.
+
+## Model Architectures
+
+Donkeycar provides several pre-built neural network architectures optimized for different use cases:
+
+### Linear Model
+
+The simplest model using linear activation for continuous steering and throttle outputs.
+
+```python
+from donkeycar.parts.keras import KerasLinear
+
+# Create linear model
+model = KerasLinear(input_shape=(120, 160, 3), num_outputs=2)
+```
+
+**Architecture:**
+- 5 convolutional layers with dropout (24, 32, 64, 64, 64 filters)
+- Flatten layer
+- 2 fully connected layers (100, 50 neurons)
+- 2 output neurons with linear activation (steering, throttle)
+
+**Loss function:** Mean Squared Error (MSE)
+
+**Use case:** Best for smooth, continuous control with unbounded outputs.
+
+### Categorical Model
+
+Converts steering and throttle into discrete bins using categorical cross-entropy.
+
+```python
+from donkeycar.parts.keras import KerasCategorical
+
+# Create categorical model
+model = KerasCategorical(input_shape=(120, 160, 3), throttle_range=0.5)
+```
+
+**Architecture:**
+- Same CNN base as Linear model
+- 2 output layers with softmax activation:
+  - Steering: 15 bins (covering -1.0 to 1.0)
+  - Throttle: 20 bins (covering throttle_range)
+
+**Loss function:** Categorical cross-entropy with equal weights (0.5, 0.5)
+
+**Use case:** Better for discrete decision-making and provides confidence distributions.
+
+**Training parameters:**
+```python
+# Steering bins
+angle = linear_bin(angle, N=15, offset=1, R=2.0)
+
+# Throttle bins
+throttle = linear_bin(throttle, N=20, offset=0.0, R=throttle_range)
+```
+
+### LSTM Model
+
+Recurrent model that uses sequences of images for temporal reasoning.
+
+```python
+from donkeycar.parts.keras import KerasLSTM
+
+# Create LSTM model with sequence length
+model = KerasLSTM(input_shape=(120, 160, 3), seq_length=3, num_outputs=2)
+```
+
+**Architecture:**
+- Time-distributed CNN layers on image sequences
+- 2 LSTM layers (128 units each)
+- Dense layers (128, 64, 10 neurons)
+- 2 output neurons
+
+**Use case:** Learns temporal patterns and motion, smoother driving behavior.
+
+**Note:** Requires sequential data during inference - maintains a deque of recent images.
+
+### 3D CNN Model
+
+Uses 3D convolutions over video sequences for spatiotemporal feature extraction.
+
+```python
+from donkeycar.parts.keras import Keras3D_CNN
+
+# Create 3D CNN model
+model = Keras3D_CNN(input_shape=(120, 160, 3), seq_length=20, num_outputs=2)
+```
+
+**Architecture:**
+- 4 Conv3D layers (16, 32, 64, 128 filters) with MaxPooling3D
+- Flatten and batch normalization
+- 2 dense layers (256 neurons) with dropout (0.5)
+- 2 output neurons
+
+**Use case:** Best for learning spatiotemporal patterns, requires longer sequences.
+
+### Memory Model
+
+Linear model augmented with recent steering/throttle history for smoother outputs.
+
+```python
+from donkeycar.parts.keras import KerasMemory
+
+# Create memory model
+model = KerasMemory(input_shape=(120, 160, 3), mem_length=3, mem_depth=0)
+```
+
+**Architecture:**
+- CNN base (same as Linear)
+- Memory input: last `mem_length` steering/throttle pairs
+- Dense layers to process memory
+- Concatenation of CNN and memory features
+- Output layers with tanh/sigmoid activation
+
+**Use case:** Produces smoother control by considering recent actions.
+
+### IMU Model
+
+Combines camera images with IMU sensor data (accelerometer/gyroscope).
+
+```python
+from donkeycar.parts.keras import KerasIMU
+
+# Create IMU model
+model = KerasIMU(input_shape=(120, 160, 3), num_outputs=2, num_imu_inputs=6)
+```
+
+**Architecture:**
+- Image branch: CNN layers
+- IMU branch: 3 dense layers (14 neurons each)
+- Concatenation of both branches
+- 2 dense layers (50 neurons) with dropout
+- 2 output neurons
+
+**IMU inputs:** `['imu/acl_x', 'imu/acl_y', 'imu/acl_z', 'imu/gyr_x', 'imu/gyr_y', 'imu/gyr_z']`
+
+**Use case:** Improves stability on rough terrain or aggressive driving.
+
+### Behavioral Model
+
+Multi-task learning with different behaviors (e.g., left lane, right lane, obstacles).
+
+```python
+from donkeycar.parts.keras import KerasBehavioral
+
+# Create behavioral model
+model = KerasBehavioral(input_shape=(120, 160, 3), 
+                        throttle_range=0.5,
+                        num_behavior_inputs=2)
+```
+
+**Architecture:**
+- Image branch: CNN layers
+- Behavior branch: Dense layers for one-hot behavior state
+- Concatenation of branches
+- Categorical outputs (15 angle bins, 20 throttle bins)
+
+**Use case:** Single model that can switch between different driving behaviors.
+
+### Localizer Model
+
+Predicts steering, throttle, and track location simultaneously.
+
+```python
+from donkeycar.parts.keras import KerasLocalizer
+
+# Create localizer model
+model = KerasLocalizer(input_shape=(120, 160, 3), num_locations=8)
+```
+
+**Architecture:**
+- Shared CNN base
+- 3 outputs: steering (linear), throttle (linear), location (softmax)
+
+**Use case:** Multi-task learning for position-aware driving.
+
+## Training Pipeline
+
+### Training Command
+
+Train a model using the command line:
+
+```bash
+donkey train --tub=./data --model=./models/mypilot.h5 --type=linear
+```
+
+**Common arguments:**
+- `--tub`: Comma-separated list of tub paths
+- `--model`: Output model path (.h5 for TensorFlow, .ckpt for PyTorch)
+- `--type`: Model type (linear, categorical, lstm, 3d_cnn, memory, imu, behavioral, localizer)
+- `--transfer`: Path to model for transfer learning
+- `--comment`: Training description for database
+
+### Training Configuration
+
+Key configuration parameters in `myconfig.py`:
+
+```python
+# Model selection
+DEFAULT_MODEL_TYPE = 'linear'  # or 'categorical', 'lstm', etc.
+
+# Training parameters
+BATCH_SIZE = 128
+MAX_EPOCHS = 100
+TRAIN_TEST_SPLIT = 0.8  # 80% training, 20% validation
+
+# Early stopping
+EARLY_STOP_PATIENCE = 5
+MIN_DELTA = 0.0005
+
+# Optimizer
+LEARNING_RATE = 0.001
+LEARNING_RATE_DECAY = 0.0
+OPTIMIZER_TYPE = 'adam'  # or 'sgd', 'rmsprop'
+
+# Display
+VERBOSE_TRAIN = 1
+SHOW_PLOT = True
+PRINT_MODEL_SUMMARY = True
+
+# Model export
+CREATE_TF_LITE = True  # Export TensorFlow Lite model
+CREATE_TENSOR_RT = False  # Export TensorRT model
+```
+
+### Training Process
+
+The training pipeline performs these steps:
+
+1. **Data Loading**: Load tub data and split into train/validation sets
+2. **Model Creation**: Initialize the selected model architecture
+3. **Compilation**: Set optimizer, loss function, and metrics
+4. **Augmentation**: Apply image augmentations (optional)
+5. **Training**: Fit model with early stopping and checkpointing
+6. **Export**: Save best model and optionally convert to TFLite/TensorRT
+
+**Training loop (internal):**
+```python
+from donkeycar.pipeline.training import train
+
+# Train model
+history = train(cfg=cfg, 
+                tub_paths='./data',
+                model='./models/mypilot.h5',
+                model_type='linear')
+
+# Training callbacks
+# - EarlyStopping: Stop when validation loss stops improving
+# - ModelCheckpoint: Save best model based on validation loss
+```
+
+**Model compilation:**
+```python
+# Linear model
+model.compile(optimizer='adam', loss='mse')
+
+# Categorical model
+model.compile(optimizer='adam',
+              metrics=['accuracy'],
+              loss={'angle_out': 'categorical_crossentropy',
+                    'throttle_out': 'categorical_crossentropy'},
+              loss_weights={'angle_out': 0.5, 'throttle_out': 0.5})
+```
+
+### Optimizer Configuration
+
+Customize the optimizer in your training script:
+
+```python
+# Set optimizer
+model.set_optimizer(optimizer_type='adam', rate=0.001, decay=0.0)
+
+# Available optimizers:
+# - 'adam': Adaptive Moment Estimation (default)
+# - 'sgd': Stochastic Gradient Descent  
+# - 'rmsprop': Root Mean Square Propagation
+```
+
+## Image Augmentation
+
+Augmentation helps prevent overfitting and improves generalization.
+
+### Configuration
+
+```python
+# Enable augmentations in myconfig.py
+AUGMENTATIONS = ['MULTIPLY', 'BLUR']
+
+# Available augmentations:
+AUGMENTATIONS = [
+    'MULTIPLY',      # Brightness adjustment (0.5 to 1.5)
+    'BLUR',          # Gaussian blur
+    'AUGMENT_SHADOW', # Random shadows
+]
+```
+
+### Custom Augmentation
+
+Create custom augmentation pipeline:
+
+```python
+from donkeycar.pipeline.augmentations import ImageAugmentation
+
+# Create augmentation
+aug = ImageAugmentation(cfg, 'AUGMENTATIONS')
+
+# Apply to image
+augmented_img = aug.run(img_arr)
+```
+
+## Transfer Learning
+
+Use a pre-trained model as starting point:
+
+```bash
+donkey train --tub=./data/new_track \
+             --model=./models/new_model.h5 \
+             --transfer=./models/base_model.h5 \
+             --type=linear
+```
+
+**Benefits:**
+- Faster training convergence
+- Better performance with limited data
+- Reuse features learned from other tracks
+
+## PyTorch Training
+
+Donkeycar also supports PyTorch with ResNet18 transfer learning.
+
+### PyTorch Model
+
+```python
+from donkeycar.parts.pytorch.ResNet18 import ResNet18
+
+# Create PyTorch model
+model = ResNet18(input_shape=(128, 3, 224, 224), output_size=(2,))
+```
+
+**Features:**
+- Pre-trained ResNet18 on ImageNet
+- Feature extraction layers frozen
+- Fine-tuned classifier layer
+- PyTorch Lightning for training
+
+### Training PyTorch Model
+
+```bash
+donkey train --tub=./data \
+             --model=./models/mypilot.ckpt \
+             --type=fastai_resnet18
+```
+
+**Configuration:**
+```python
+DEFAULT_MODEL_TYPE = 'fastai_resnet18'
+
+# PyTorch uses same training params
+BATCH_SIZE = 128
+MAX_EPOCHS = 100
+TRAIN_TEST_SPLIT = 0.8
+```
+
+### PyTorch Data Pipeline
+
+```python
+from donkeycar.parts.pytorch.torch_data import TorchTubDataset, get_default_transform
+
+# Create dataset with transform
+transform = get_default_transform(resize=False)
+dataset = TorchTubDataset(cfg, records, transform=transform)
+
+# Default transform includes:
+# - Resize to 224x224 (for ResNet)
+# - Convert to tensor
+# - Normalize with ImageNet mean/std
+```
+
+## Model Selection Guide
+
+| Model | Speed | Accuracy | Memory | Use Case |
+|-------|-------|----------|--------|----------|
+| Linear | Fast | Good | Low | General purpose, fast inference |
+| Categorical | Fast | Better | Low | Better confidence, discrete control |
+| LSTM | Slow | Better | High | Temporal reasoning, smooth driving |
+| 3D CNN | Very Slow | Best | Very High | Complex spatiotemporal patterns |
+| Memory | Fast | Better | Low | Smooth control with history |
+| IMU | Fast | Better | Low | Rough terrain, better stability |
+| Behavioral | Fast | Good | Medium | Multiple driving modes |
+| PyTorch ResNet | Medium | Best | Medium | Transfer learning, limited data |
+
+## Performance Tips
+
+1. **Start with Linear model**: Simple and fast, good baseline
+2. **Try Categorical for better accuracy**: Especially on complex tracks
+3. **Use augmentation**: Prevents overfitting on small datasets
+4. **Monitor validation loss**: Use early stopping to prevent overfitting
+5. **Collect diverse data**: Various lighting, positions, speeds
+6. **Try transfer learning**: Start from pre-trained model
+7. **Tune batch size**: Larger batches are faster but use more memory
+8. **Use GPU**: Significantly faster training (CUDA)
+
+## Model Inference
+
+Use trained model in your car:
+
+```python
+from donkeycar.parts.keras import KerasLinear
+
+# Load model
+model = KerasLinear()
+model.load('./models/mypilot.h5')
+
+# Run inference
+steering, throttle = model.run(img_arr)
+```
+
+## Training Output
+
+Training produces:
+- **Model file**: `mypilot.h5` (TensorFlow) or `mypilot.ckpt` (PyTorch)
+- **TFLite model**: `mypilot.tflite` (for embedded devices)
+- **Training plot**: `mypilot.png` (loss curves)
+- **Database entry**: Training metadata and history
+
+**Database location:** `data/pilot_db.json`
+
+## Next Steps
+
+- [Calibration](/guides/calibration) - Calibrate your car for better training data
+- [Get Driving](/guides/driving) - Use your trained model to drive
+- [Deep Learning](/training/deep-learning) - Advanced model architectures

@@ -1,0 +1,322 @@
+---
+title: PyTorch Model Parts API
+description: PyTorch-based neural network pilots using PyTorch Lightning
+---
+
+PyTorch model parts provide deep learning autopilots using the PyTorch framework and PyTorch Lightning for training.
+
+## Overview
+
+Donkeycar's PyTorch support uses PyTorch Lightning for structured training and inference. Models are pre-trained on ImageNet and fine-tuned for autonomous driving tasks.
+
+## Model Creation
+
+### get_model_by_type
+
+Factory function to create PyTorch models by type.
+
+**Function:**
+
+```python
+get_model_by_type(model_type, cfg, checkpoint_path=None)
+```
+
+<ParamField path="model_type" type="str">
+  Type of model to create (e.g., 'resnet18')
+</ParamField>
+
+<ParamField path="cfg" type="Config">
+  Configuration object with model settings
+</ParamField>
+
+<ParamField path="checkpoint_path" type="str" default="None">
+  Optional path to model checkpoint to load
+</ParamField>
+
+**Returns:** PyTorch Lightning model instance
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.pytorch.torch_utils import get_model_by_type
+
+model = get_model_by_type('resnet18', cfg, checkpoint_path='models/pilot.ckpt')
+```
+
+## Models
+
+### ResNet18
+
+ResNet18 model pre-trained on ImageNet, fine-tuned for steering and throttle prediction.
+
+**Constructor:**
+
+```python
+ResNet18(input_shape=(128, 3, 224, 224), output_size=(2,))
+```
+
+<ParamField path="input_shape" type="tuple" default="(128, 3, 224, 224)">
+  Input tensor shape (batch_size, channels, height, width)
+</ParamField>
+
+<ParamField path="output_size" type="tuple" default="(2,)">
+  Output dimensions (2 for angle and throttle)
+</ParamField>
+
+**Architecture:**
+- Pre-trained ResNet18 backbone (frozen)
+- Custom fully-connected head (512 -> 2 outputs)
+- Only the FC layer is trained
+
+**Input Requirements:**
+- Images must be 224x224x3 (ImageNet standard)
+- Images are automatically resized and normalized
+
+**Methods:**
+
+<ParamField path="forward" type="(x: torch.Tensor) -> torch.Tensor">
+  Forward pass through the model
+</ParamField>
+
+<ParamField path="run" type="(img_arr: np.ndarray, other_arr: np.ndarray) -> tuple">
+  Donkeycar part interface. Returns (angle, throttle) tuple.
+</ParamField>
+
+<ParamField path="training_step" type="(batch, batch_idx) -> loss">
+  PyTorch Lightning training step
+</ParamField>
+
+<ParamField path="validation_step" type="(batch, batch_idx) -> None">
+  PyTorch Lightning validation step
+</ParamField>
+
+<ParamField path="configure_optimizers" type="() -> optimizer">
+  Returns Adam optimizer with lr=0.0001, weight_decay=0.0005
+</ParamField>
+
+**Loss Function:** L1 Loss (Mean Absolute Error)
+
+**Metrics:**
+- `train_mse`: Training Mean Squared Error
+- `valid_mse`: Validation Mean Squared Error
+- `train_loss`: Training L1 loss
+- `val_loss`: Validation L1 loss
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.pytorch.ResNet18 import ResNet18
+import numpy as np
+
+# Create model
+model = ResNet18(input_shape=(1, 3, 224, 224), output_size=(2,))
+
+# Load checkpoint
+model = ResNet18.load_from_checkpoint('models/pilot.ckpt')
+
+# Run inference
+img_arr = np.random.randint(0, 255, (120, 160, 3), dtype=np.uint8)
+angle, throttle = model.run(img_arr)
+```
+
+## Training
+
+### Training with PyTorch Lightning
+
+```python
+import pytorch_lightning as pl
+from donkeycar.parts.pytorch.ResNet18 import ResNet18
+from donkeycar.parts.pytorch.torch_data import get_dataloader
+
+# Create model
+model = ResNet18()
+
+# Create data loaders
+train_loader = get_dataloader(tub_paths, cfg, is_train=True)
+val_loader = get_dataloader(tub_paths, cfg, is_train=False)
+
+# Create trainer
+trainer = pl.Trainer(
+    max_epochs=100,
+    accelerator='auto',
+    devices=1,
+    callbacks=[...]
+)
+
+# Train
+trainer.fit(model, train_loader, val_loader)
+
+# Save
+trainer.save_checkpoint('models/pilot.ckpt')
+```
+
+### Training Configuration
+
+**Optimizer:** Adam
+- Learning rate: 0.0001
+- Weight decay: 0.0005
+
+**Loss Function:** L1 Loss (MAE)
+
+**Metrics Tracked:**
+- Training MSE
+- Validation MSE  
+- Training L1 Loss
+- Validation L1 Loss
+
+## Data Pipeline
+
+### Image Transformations
+
+PyTorch models use specific image transformations:
+
+```python
+from donkeycar.parts.pytorch.torch_data import get_default_transform
+
+# For training
+train_transform = get_default_transform(for_inference=False)
+
+# For inference
+inference_transform = get_default_transform(for_inference=True)
+```
+
+**Transformations Applied:**
+1. Resize to 224x224
+2. Convert to tensor
+3. Normalize with ImageNet mean/std:
+   - Mean: [0.485, 0.456, 0.406]
+   - Std: [0.229, 0.224, 0.225]
+
+## Integration with Donkeycar
+
+### Adding to Vehicle
+
+```python
+from donkeycar.parts.pytorch.torch_utils import get_model_by_type
+
+# Create model
+model = get_model_by_type(
+    model_type='resnet18',
+    cfg=cfg,
+    checkpoint_path='models/pilot.ckpt'
+)
+
+# Add to vehicle
+V.add(model,
+      inputs=['cam/image_array'],
+      outputs=['pilot/angle', 'pilot/throttle'],
+      run_condition='pilot_mode')
+```
+
+### Model Loading
+
+```python
+# Load from checkpoint
+from donkeycar.parts.pytorch.ResNet18 import ResNet18
+
+model = ResNet18.load_from_checkpoint('models/pilot.ckpt')
+```
+
+## Configuration
+
+Typical PyTorch configuration in `myconfig.py`:
+
+```python
+# Model Type
+DEFAULT_MODEL_TYPE = 'resnet18'
+
+# Training
+BATCH_SIZE = 128
+MAX_EPOCHS = 100
+LEARNING_RATE = 0.0001
+WEIGHT_DECAY = 0.0005
+
+# Image Settings (ResNet18 requires 224x224)
+IMAGE_W = 224
+IMAGE_H = 224
+IMAGE_DEPTH = 3
+
+# Data Split
+TRAIN_TEST_SPLIT = 0.8
+```
+
+## Advanced Usage
+
+### Custom Training Loop
+
+```python
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
+
+# Create callbacks
+checkpoint_callback = ModelCheckpoint(
+    dirpath='models/',
+    filename='pilot-{epoch:02d}-{val_loss:.2f}',
+    monitor='val_loss',
+    mode='min',
+    save_top_k=3
+)
+
+early_stop_callback = EarlyStopping(
+    monitor='val_loss',
+    patience=10,
+    mode='min'
+)
+
+# Create trainer with callbacks
+trainer = pl.Trainer(
+    max_epochs=100,
+    callbacks=[checkpoint_callback, early_stop_callback],
+    accelerator='gpu',
+    devices=1
+)
+
+trainer.fit(model, train_loader, val_loader)
+```
+
+### Accessing Training History
+
+```python
+# Loss history is tracked automatically
+losses = model.loss_history
+print(f"Training losses: {losses}")
+```
+
+### Fine-tuning Strategy
+
+By default, ResNet18 freezes the feature extraction layers and only trains the final fully-connected layer:
+
+```python
+# Frozen layers (not trained)
+for layer in model.model.parameters():
+    layer.requires_grad = False
+
+# Trainable layer
+model.model.fc = nn.Linear(512, 2)
+for param in model.model.fc.parameters():
+    param.requires_grad = True
+```
+
+To unfreeze all layers:
+
+```python
+for param in model.model.parameters():
+    param.requires_grad = True
+```
+
+## Comparison with Keras
+
+| Feature | Keras | PyTorch |
+|---------|-------|----------|
+| Framework | TensorFlow | PyTorch Lightning |
+| Input Size | Configurable | Fixed 224x224 |
+| Pre-training | Optional | ImageNet (frozen) |
+| Loss | MSE or Categorical | L1 (MAE) |
+| API | Simpler | More flexible |
+| Training | Built-in | Lightning Trainer |
+
+## Requirements
+
+```bash
+pip install torch torchvision pytorch-lightning torchmetrics
+```

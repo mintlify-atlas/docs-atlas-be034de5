@@ -1,0 +1,288 @@
+---
+title: Camera Parts API
+description: Camera input parts for image capture from various hardware platforms
+---
+
+Camera parts capture image data from various camera hardware including Raspberry Pi cameras, webcams, CSI cameras, and mock cameras for testing.
+
+## Base Classes
+
+### BaseCamera
+
+Base class for all camera implementations.
+
+**Methods:**
+
+<ParamField path="run_threaded" type="() -> np.ndarray">
+  Returns the most recently captured frame
+</ParamField>
+
+## Camera Implementations
+
+### PiCamera
+
+Raspberry Pi camera using the Picamera2 library (Bullseye and later).
+
+**Constructor:**
+
+```python
+PiCamera(image_w=160, image_h=120, image_d=3, vflip=False, hflip=False)
+```
+
+<ParamField path="image_w" type="int" default="160">
+  Image width in pixels
+</ParamField>
+
+<ParamField path="image_h" type="int" default="120">
+  Image height in pixels
+</ParamField>
+
+<ParamField path="image_d" type="int" default="3">
+  Image depth/channels (3 for RGB, 1 for grayscale)
+</ParamField>
+
+<ParamField path="vflip" type="bool" default="false">
+  Flip image vertically
+</ParamField>
+
+<ParamField path="hflip" type="bool" default="false">
+  Flip image horizontally
+</ParamField>
+
+**Methods:**
+
+<ParamField path="run" type="() -> np.ndarray">
+  Captures and returns a new frame from the camera buffer
+</ParamField>
+
+<ParamField path="update" type="() -> None">
+  Continuously captures frames in a threaded loop
+</ParamField>
+
+<ParamField path="shutdown" type="() -> None">
+  Stops the camera and releases resources
+</ParamField>
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.camera import PiCamera
+
+# Create camera with custom resolution
+cam = PiCamera(image_w=160, image_h=120, vflip=True)
+
+# Get a frame
+frame = cam.run()
+
+# For threaded mode
+import threading
+thread = threading.Thread(target=cam.update)
+thread.start()
+frame = cam.run_threaded()
+```
+
+### Webcam
+
+USB webcam using pygame camera interface.
+
+**Constructor:**
+
+```python
+Webcam(image_w=160, image_h=120, image_d=3, framerate=20, camera_index=0)
+```
+
+<ParamField path="image_w" type="int" default="160">
+  Image width in pixels
+</ParamField>
+
+<ParamField path="image_h" type="int" default="120">
+  Image height in pixels
+</ParamField>
+
+<ParamField path="image_d" type="int" default="3">
+  Image depth/channels (3 for RGB, 1 for grayscale)
+</ParamField>
+
+<ParamField path="framerate" type="int" default="20">
+  Target framerate in Hz
+</ParamField>
+
+<ParamField path="camera_index" type="int" default="0">
+  Index of the camera device to use
+</ParamField>
+
+**Installation:**
+
+```bash
+sudo apt-get install libsdl2-mixer-2.0-0 libsdl2-image-2.0-0 libsdl2-2.0-0
+pip install pygame
+```
+
+**Methods:**
+
+<ParamField path="run" type="() -> np.ndarray">
+  Captures and returns a new frame
+</ParamField>
+
+<ParamField path="update" type="() -> None">
+  Continuously captures frames at the specified framerate
+</ParamField>
+
+<ParamField path="shutdown" type="() -> None">
+  Stops the camera and releases resources
+</ParamField>
+
+### CSICamera
+
+Jetson Nano CSI camera using GStreamer.
+
+**Constructor:**
+
+```python
+CSICamera(image_w=160, image_h=120, image_d=3, capture_width=3280, 
+          capture_height=2464, framerate=60, gstreamer_flip=0)
+```
+
+<ParamField path="image_w" type="int" default="160">
+  Output image width in pixels
+</ParamField>
+
+<ParamField path="image_h" type="int" default="120">
+  Output image height in pixels
+</ParamField>
+
+<ParamField path="image_d" type="int" default="3">
+  Image depth/channels
+</ParamField>
+
+<ParamField path="capture_width" type="int" default="3280">
+  Sensor capture width
+</ParamField>
+
+<ParamField path="capture_height" type="int" default="2464">
+  Sensor capture height
+</ParamField>
+
+<ParamField path="framerate" type="int" default="60">
+  Camera framerate
+</ParamField>
+
+<ParamField path="gstreamer_flip" type="int" default="0">
+  Flip method: 0=none, 1=rotate CCW 90°, 2=flip vertical, 3=rotate CW 90°
+</ParamField>
+
+**Methods:**
+
+<ParamField path="run" type="() -> np.ndarray">
+  Captures and returns a new frame
+</ParamField>
+
+<ParamField path="update" type="() -> None">
+  Continuously captures frames in a threaded loop
+</ParamField>
+
+<ParamField path="shutdown" type="() -> None">
+  Stops the camera and releases resources
+</ParamField>
+
+### V4LCamera
+
+Video4Linux camera using v4l2capture library.
+
+**Constructor:**
+
+```python
+V4LCamera(image_w=160, image_h=120, image_d=3, framerate=20,
+          dev_fn="/dev/video0", fourcc='MJPG')
+```
+
+<ParamField path="image_w" type="int" default="160">
+  Image width in pixels
+</ParamField>
+
+<ParamField path="image_h" type="int" default="120">
+  Image height in pixels
+</ParamField>
+
+<ParamField path="dev_fn" type="str" default="/dev/video0">
+  Video device path
+</ParamField>
+
+<ParamField path="fourcc" type="str" default="MJPG">
+  Video format FourCC code
+</ParamField>
+
+**Installation:**
+
+```bash
+sudo apt-get install libv4l-dev
+pip install python3-v4l2capture
+```
+
+## Mock/Testing Cameras
+
+### MockCamera
+
+Returns a static image for testing.
+
+**Constructor:**
+
+```python
+MockCamera(image_w=160, image_h=120, image_d=3, image=None)
+```
+
+<ParamField path="image" type="np.ndarray" default="None">
+  Optional image array to use. If None, creates a blank image.
+</ParamField>
+
+### ImageListCamera
+
+Returns images from a directory in sequence.
+
+**Constructor:**
+
+```python
+ImageListCamera(path_mask='~/mycar/data/**/images/*.jpg')
+```
+
+<ParamField path="path_mask" type="str">
+  Glob pattern for image files
+</ParamField>
+
+**Methods:**
+
+<ParamField path="run_threaded" type="() -> np.ndarray">
+  Returns the next image in the sequence
+</ParamField>
+
+## Configuration
+
+Cameras are typically configured in `myconfig.py`:
+
+```python
+# Camera settings
+CAMERA_TYPE = "PICAM"  # PICAM, WEBCAM, CVCAM, CSIC, etc.
+IMAGE_W = 160
+IMAGE_H = 120
+IMAGE_DEPTH = 3
+CAMERA_FRAMERATE = 20
+CAMERA_VFLIP = False
+CAMERA_HFLIP = False
+```
+
+## Integration Example
+
+From templates like `complete.py`:
+
+```python
+if cfg.CAMERA_TYPE == "PICAM":
+    from donkeycar.parts.camera import PiCamera
+    cam = PiCamera(image_w=cfg.IMAGE_W, image_h=cfg.IMAGE_H,
+                   image_d=cfg.IMAGE_DEPTH, vflip=cfg.CAMERA_VFLIP)
+elif cfg.CAMERA_TYPE == "WEBCAM":
+    from donkeycar.parts.camera import Webcam
+    cam = Webcam(image_w=cfg.IMAGE_W, image_h=cfg.IMAGE_H,
+                 image_d=cfg.IMAGE_DEPTH)
+
+V.add(cam, outputs=['cam/image_array'], threaded=True)
+```

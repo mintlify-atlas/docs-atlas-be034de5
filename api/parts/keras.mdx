@@ -1,0 +1,380 @@
+---
+title: Keras Model Parts API
+description: Keras-based neural network pilots for autonomous driving
+---
+
+Keras model parts provide neural network-based autopilots that predict steering and throttle from camera images.
+
+## Base Classes
+
+### KerasPilot
+
+Abstract base class for all Keras-based pilots.
+
+**Constructor:**
+
+```python
+KerasPilot(interpreter=KerasInterpreter(), input_shape=(120, 160, 3))
+```
+
+<ParamField path="interpreter" type="Interpreter" default="KerasInterpreter()">
+  Model interpreter (Keras, TFLite, TensorRT)
+</ParamField>
+
+<ParamField path="input_shape" type="tuple" default="(120, 160, 3)">
+  Input image shape (height, width, channels)
+</ParamField>
+
+**Methods:**
+
+<ParamField path="run" type="(img_arr: np.ndarray, *other_arr) -> (angle, throttle)">
+  Run inference on image and optional additional inputs. Returns steering angle and throttle.
+</ParamField>
+
+<ParamField path="load" type="(model_path: str) -> None">
+  Load a trained model from file
+</ParamField>
+
+<ParamField path="train" type="(model_path, train_data, train_steps, ...) -> history">
+  Train the model on provided dataset
+</ParamField>
+
+<ParamField path="compile" type="() -> None">
+  Compile the model with optimizer and loss function
+</ParamField>
+
+## Linear Pilots
+
+### KerasLinear
+
+Linear regression pilot with continuous outputs.
+
+**Constructor:**
+
+```python
+KerasLinear(interpreter=KerasInterpreter(), input_shape=(120, 160, 3), num_outputs=2)
+```
+
+<ParamField path="num_outputs" type="int" default="2">
+  Number of outputs (typically 2: angle and throttle)
+</ParamField>
+
+**Architecture:**
+- 5 convolutional layers (24, 32, 64, 64, 64 filters)
+- Dropout layers for regularization
+- 2 dense layers (100, 50 neurons)
+- Linear output layer per output
+
+**Loss Function:** Mean Squared Error (MSE)
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.keras import KerasLinear
+
+kl = KerasLinear(input_shape=(120, 160, 3))
+kl.load('models/pilot.h5')
+
+V.add(kl,
+      inputs=['cam/image_array'],
+      outputs=['pilot/angle', 'pilot/throttle'])
+```
+
+### KerasCategorical
+
+Categorical classification pilot that bins outputs.
+
+**Constructor:**
+
+```python
+KerasCategorical(interpreter=KerasInterpreter(), input_shape=(120, 160, 3),
+                 throttle_range=0.5)
+```
+
+<ParamField path="throttle_range" type="float" default="0.5">
+  Maximum throttle range (0 to throttle_range)
+</ParamField>
+
+**Architecture:**
+- 5 convolutional layers
+- Dropout layers
+- 2 dense layers
+- Softmax outputs: 15 bins for angle, 20 bins for throttle
+
+**Loss Function:** Categorical Cross-Entropy
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.keras import KerasCategorical
+
+kl = KerasCategorical(throttle_range=0.5)
+kl.load('models/pilot.h5')
+
+V.add(kl,
+      inputs=['cam/image_array'],
+      outputs=['pilot/angle', 'pilot/throttle'])
+```
+
+## Recurrent Pilots
+
+### KerasMemory
+
+Pilot with memory of previous steering/throttle commands.
+
+**Constructor:**
+
+```python
+KerasMemory(interpreter=KerasInterpreter(), input_shape=(120, 160, 3),
+            mem_length=3, mem_depth=0, mem_start_speed=0.0)
+```
+
+<ParamField path="mem_length" type="int" default="3">
+  Number of previous commands to remember
+</ParamField>
+
+<ParamField path="mem_depth" type="int" default="0">
+  Number of dense layers for memory processing
+</ParamField>
+
+<ParamField path="mem_start_speed" type="float" default="0.0">
+  Initial throttle value for memory
+</ParamField>
+
+**Architecture:**
+- Standard CNN layers for image
+- Additional dense layers for memory input
+- Concatenation of image and memory features
+- Linear outputs
+
+**Returns:** Smoother steering outputs by considering recent control history
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.keras import KerasMemory
+
+kl = KerasMemory(mem_length=3, mem_depth=2)
+kl.load('models/pilot.h5')
+
+V.add(kl,
+      inputs=['cam/image_array'],
+      outputs=['pilot/angle', 'pilot/throttle'])
+```
+
+### KerasLSTM
+
+Long Short-Term Memory (LSTM) pilot for temporal sequences.
+
+**Constructor:**
+
+```python
+KerasLSTM(interpreter=KerasInterpreter(), input_shape=(120, 160, 3),
+          seq_length=3, num_outputs=2)
+```
+
+<ParamField path="seq_length" type="int" default="3">
+  Number of frames in sequence
+</ParamField>
+
+<ParamField path="num_outputs" type="int" default="2">
+  Number of outputs
+</ParamField>
+
+**Architecture:**
+- Time-distributed convolutional layers
+- 2 LSTM layers (128 units each)
+- Dense layers
+- Linear output
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.keras import KerasLSTM
+
+kl = KerasLSTM(seq_length=3)
+kl.load('models/pilot.h5')
+
+V.add(kl,
+      inputs=['cam/image_array'],
+      outputs=['pilot/angle', 'pilot/throttle'])
+```
+
+### Keras3D_CNN
+
+3D Convolutional Neural Network for temporal sequences.
+
+**Constructor:**
+
+```python
+Keras3D_CNN(interpreter=KerasInterpreter(), input_shape=(120, 160, 3),
+            seq_length=20, num_outputs=2)
+```
+
+<ParamField path="seq_length" type="int" default="20">
+  Number of frames in sequence
+</ParamField>
+
+**Architecture:**
+- 4 Conv3D layers with max pooling
+- Flatten and dense layers
+- Batch normalization and dropout
+
+## Multi-Input Pilots
+
+### KerasIMU
+
+Pilot that uses camera image + IMU sensor data.
+
+**Constructor:**
+
+```python
+KerasIMU(interpreter=KerasInterpreter(), input_shape=(120, 160, 3),
+         num_outputs=2, num_imu_inputs=6)
+```
+
+<ParamField path="num_imu_inputs" type="int" default="6">
+  Number of IMU inputs (accel_xyz + gyro_xyz)
+</ParamField>
+
+**Architecture:**
+- CNN branch for image processing
+- Dense branch for IMU data
+- Concatenated features
+- Linear outputs
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.keras import KerasIMU
+
+kl = KerasIMU(num_imu_inputs=6)
+kl.load('models/pilot.h5')
+
+V.add(kl,
+      inputs=['cam/image_array', 'imu_array'],
+      outputs=['pilot/angle', 'pilot/throttle'])
+```
+
+### KerasBehavioral
+
+Behavioral cloning with behavior state input.
+
+**Constructor:**
+
+```python
+KerasBehavioral(interpreter=KerasInterpreter(), input_shape=(120, 160, 3),
+                throttle_range=0.5, num_behavior_inputs=2)
+```
+
+<ParamField path="num_behavior_inputs" type="int" default="2">
+  Number of behavior state inputs
+</ParamField>
+
+**Architecture:**
+- CNN branch for image
+- Dense branch for behavior state
+- Categorical outputs (like KerasCategorical)
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.keras import KerasBehavioral
+
+kl = KerasBehavioral(num_behavior_inputs=2)
+kl.load('models/pilot.h5')
+
+V.add(kl,
+      inputs=['cam/image_array', 'behavior/state'],
+      outputs=['pilot/angle', 'pilot/throttle'])
+```
+
+### KerasLocalizer
+
+Pilot with track localization output.
+
+**Constructor:**
+
+```python
+KerasLocalizer(interpreter=KerasInterpreter(), input_shape=(120, 160, 3),
+               num_locations=8)
+```
+
+<ParamField path="num_locations" type="int" default="8">
+  Number of track location categories
+</ParamField>
+
+**Outputs:**
+- Steering angle
+- Throttle
+- Track location (0 to num_locations-1)
+
+## Training
+
+### Training a Model
+
+```python
+from donkeycar.parts.keras import KerasLinear
+
+kl = KerasLinear()
+kl.compile()
+
+history = kl.train(
+    model_path='models/pilot.h5',
+    train_data=train_dataset,
+    train_steps=steps,
+    batch_size=128,
+    validation_data=val_dataset,
+    validation_steps=val_steps,
+    epochs=100,
+    verbose=1
+)
+```
+
+### Optimizer Configuration
+
+```python
+kl.set_optimizer('adam', rate=0.001, decay=0.0)
+```
+
+**Supported Optimizers:**
+- `'adam'`: Adam optimizer
+- `'sgd'`: Stochastic Gradient Descent
+- `'rmsprop'`: RMSProp
+
+## Configuration
+
+Typical configuration in `myconfig.py`:
+
+```python
+# Model Settings
+DEFAULT_MODEL_TYPE = 'linear'
+BATCH_SIZE = 128
+TRAIN_TEST_SPLIT = 0.8
+
+# Image Settings  
+IMAGE_W = 160
+IMAGE_H = 120
+IMAGE_DEPTH = 3
+
+# Training
+MAX_EPOCHS = 100
+MIN_DELTA = 0.0005
+PATIENCE = 5
+```
+
+## Integration Example
+
+```python
+from donkeycar.parts.keras import KerasLinear
+
+# Create and load pilot
+kl = KerasLinear()
+kl.load(cfg.MODEL_PATH)
+
+# Add to vehicle
+V.add(kl,
+      inputs=['cam/image_array'],
+      outputs=['pilot/angle', 'pilot/throttle'],
+      run_condition='pilot_mode')
+```

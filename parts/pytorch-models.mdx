@@ -1,0 +1,603 @@
+---
+title: PyTorch Model Parts
+description: PyTorch neural network models for autonomous driving
+---
+
+PyTorch model parts provide an alternative deep learning framework to Keras for building autonomous driving models.
+
+## Overview
+
+Donkeycar supports PyTorch models through a modular architecture similar to Keras parts. PyTorch models can be used interchangeably with Keras models in your vehicle.
+
+**Location**: `donkeycar/parts/pytorch/`
+
+## Getting Started
+
+### Installation
+
+```bash
+# Install PyTorch (CPU version)
+pip install torch torchvision
+
+# For NVIDIA Jetson (GPU)
+pip install torch torchvision --extra-index-url https://developer.download.nvidia.com/compute/redist/jp/v461 tensorflow
+
+# For Raspberry Pi (CPU optimized)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+```
+
+### Basic Usage
+
+```python
+from donkeycar.parts.pytorch.torch_utils import get_model_by_type
+
+# Create model
+model = get_model_by_type(
+    model_type='resnet18',
+    cfg=cfg,
+    checkpoint_path='./models/my_model.pth'
+)
+
+# Add to vehicle
+V.add(model,
+      inputs=['cam/image_array'],
+      outputs=['pilot/angle', 'pilot/throttle'],
+      run_condition='run_pilot')
+```
+
+## Available Models
+
+### ResNet18
+
+Transfer learning model based on ImageNet pre-trained ResNet18.
+
+**Location**: `donkeycar/parts/pytorch/ResNet18.py`
+
+```python
+from donkeycar.parts.pytorch.ResNet18 import ResNet18
+
+model = ResNet18(
+    input_shape=(cfg.BATCH_SIZE, 3, 224, 224),  # BatchSize, Channels, Height, Width
+    num_outputs=2  # angle, throttle
+)
+```
+
+**Architecture**:
+```python
+class ResNet18(nn.Module):
+    def __init__(self, input_shape, num_outputs=2):
+        super().__init__()
+        
+        # Load pre-trained ResNet18
+        self.backbone = models.resnet18(pretrained=True)
+        
+        # Replace final layer
+        num_features = self.backbone.fc.in_features
+        self.backbone.fc = nn.Sequential(
+            nn.Linear(num_features, 512),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(512, num_outputs)
+        )
+    
+    def forward(self, x):
+        return self.backbone(x)
+```
+
+**Features**:
+- **Transfer Learning**: Leverages ImageNet pre-trained weights
+- **Fixed Input Size**: Requires 224x224x3 images
+- **High Accuracy**: Better feature extraction than training from scratch
+- **GPU Recommended**: Computationally intensive
+
+**Configuration**:
+
+In `myconfig.py`:
+```python
+# PyTorch settings
+DEFAULT_MODEL_TYPE = 'resnet18'
+MODEL_PATH = './models/resnet18.pth'
+
+# Image size (ResNet18 requires 224x224)
+IMAGE_W = 224
+IMAGE_H = 224
+IMAGE_DEPTH = 3
+
+# Training
+BATCH_SIZE = 16  # Adjust based on GPU memory
+LEARNING_RATE = 0.0001
+EPOCHS = 10
+```
+
+## Model Utilities
+
+### get_model_by_type
+
+**Location**: `donkeycar/parts/pytorch/torch_utils.py:4`
+
+```python
+from donkeycar.parts.pytorch.torch_utils import get_model_by_type
+
+model = get_model_by_type(
+    model_type='resnet18',  # Model architecture
+    cfg=cfg,                 # Configuration object
+    checkpoint_path=None     # Optional: path to saved weights
+)
+```
+
+**Supported Model Types**:
+- `'resnet18'` - ResNet18 transfer learning model
+- (Additional models can be added)
+
+## Training PyTorch Models
+
+### Training Script
+
+**Location**: `donkeycar/parts/pytorch/torch_train.py`
+
+```python
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader
+from donkeycar.parts.pytorch.torch_data import DonkeyDataset
+from donkeycar.parts.pytorch.ResNet18 import ResNet18
+
+# Load configuration
+import donkeycar as dk
+cfg = dk.load_config()
+
+# Create datasets
+train_dataset = DonkeyDataset(
+    tub_paths=['./data/tub_1', './data/tub_2'],
+    config=cfg,
+    mode='train'
+)
+
+val_dataset = DonkeyDataset(
+    tub_paths=['./data/tub_3'],
+    config=cfg,
+    mode='val'
+)
+
+# Create data loaders
+train_loader = DataLoader(
+    train_dataset,
+    batch_size=cfg.BATCH_SIZE,
+    shuffle=True,
+    num_workers=4
+)
+
+val_loader = DataLoader(
+    val_dataset,
+    batch_size=cfg.BATCH_SIZE,
+    shuffle=False,
+    num_workers=4
+)
+
+# Create model
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = ResNet18(input_shape=(cfg.BATCH_SIZE, 3, 224, 224))
+model = model.to(device)
+
+# Loss and optimizer
+criterion = nn.MSELoss()
+optimizer = optim.Adam(model.parameters(), lr=cfg.LEARNING_RATE)
+
+# Training loop
+for epoch in range(cfg.EPOCHS):
+    model.train()
+    train_loss = 0.0
+    
+    for images, labels in train_loader:
+        images = images.to(device)
+        labels = labels.to(device)
+        
+        # Forward pass
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+        
+        # Backward pass
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        
+        train_loss += loss.item()
+    
+    # Validation
+    model.eval()
+    val_loss = 0.0
+    
+    with torch.no_grad():
+        for images, labels in val_loader:
+            images = images.to(device)
+            labels = labels.to(device)
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+            val_loss += loss.item()
+    
+    print(f'Epoch {epoch+1}/{cfg.EPOCHS}')
+    print(f'Train Loss: {train_loss/len(train_loader):.4f}')
+    print(f'Val Loss: {val_loss/len(val_loader):.4f}')
+    
+    # Save checkpoint
+    torch.save({
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'loss': train_loss,
+    }, f'./models/checkpoint_epoch_{epoch}.pth')
+
+# Save final model
+torch.save(model.state_dict(), './models/resnet18_final.pth')
+```
+
+### Training Command
+
+```bash
+cd ~/mycar
+python -m donkeycar.parts.pytorch.torch_train --tub ./data --model ./models/resnet18.pth
+```
+
+## Dataset Handling
+
+### DonkeyDataset
+
+**Location**: `donkeycar/parts/pytorch/torch_data.py`
+
+PyTorch Dataset class for loading Donkeycar tub data.
+
+```python
+from donkeycar.parts.pytorch.torch_data import DonkeyDataset
+import torch
+from torch.utils.data import DataLoader
+
+# Create dataset
+dataset = DonkeyDataset(
+    tub_paths=['./data/tub_1', './data/tub_2'],
+    config=cfg,
+    mode='train',  # 'train' or 'val'
+    transform=None  # Optional transforms
+)
+
+# Create data loader
+loader = DataLoader(
+    dataset,
+    batch_size=32,
+    shuffle=True,
+    num_workers=4,
+    pin_memory=True  # For GPU training
+)
+
+# Iterate
+for images, labels in loader:
+    # images: (batch_size, channels, height, width)
+    # labels: (batch_size, 2) - angle, throttle
+    pass
+```
+
+**Data Augmentation**:
+
+```python
+import torchvision.transforms as transforms
+
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.RandomHorizontalFlip(p=0.5),
+    transforms.ColorJitter(
+        brightness=0.2,
+        contrast=0.2,
+        saturation=0.2,
+        hue=0.1
+    ),
+    transforms.ToTensor(),
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],  # ImageNet stats
+        std=[0.229, 0.224, 0.225]
+    )
+])
+
+dataset = DonkeyDataset(
+    tub_paths=['./data'],
+    config=cfg,
+    transform=transform
+)
+```
+
+## Model Inference
+
+### Loading Saved Models
+
+```python
+import torch
+from donkeycar.parts.pytorch.ResNet18 import ResNet18
+
+# Create model
+model = ResNet18(input_shape=(1, 3, 224, 224))
+
+# Load weights
+checkpoint = torch.load('./models/resnet18.pth')
+model.load_state_dict(checkpoint['model_state_dict'])
+
+# Set to evaluation mode
+model.eval()
+
+# Use GPU if available
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = model.to(device)
+```
+
+### Running Inference
+
+```python
+import torch
+import numpy as np
+from PIL import Image
+import torchvision.transforms as transforms
+
+# Preprocessing
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    )
+])
+
+# Load and preprocess image
+img = Image.open('test_image.jpg')
+img_tensor = transform(img).unsqueeze(0)  # Add batch dimension
+img_tensor = img_tensor.to(device)
+
+# Inference
+with torch.no_grad():
+    output = model(img_tensor)
+    angle, throttle = output[0].cpu().numpy()
+
+print(f"Predicted - Angle: {angle:.3f}, Throttle: {throttle:.3f}")
+```
+
+### In Vehicle Loop
+
+```python
+class PyTorchPilot:
+    def __init__(self, model_path, device='cpu'):
+        self.device = torch.device(device)
+        self.model = ResNet18(input_shape=(1, 3, 224, 224))
+        self.model.load_state_dict(torch.load(model_path))
+        self.model.to(self.device)
+        self.model.eval()
+        
+        self.transform = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225]
+            )
+        ])
+    
+    def run(self, img_arr):
+        # Preprocess
+        img_tensor = self.transform(img_arr).unsqueeze(0)
+        img_tensor = img_tensor.to(self.device)
+        
+        # Inference
+        with torch.no_grad():
+            output = self.model(img_tensor)
+            angle, throttle = output[0].cpu().numpy()
+        
+        return angle, throttle
+    
+    def shutdown(self):
+        pass
+
+# In manage.py
+pilot = PyTorchPilot('./models/resnet18.pth', device='cuda')
+V.add(pilot,
+      inputs=['cam/image_array'],
+      outputs=['pilot/angle', 'pilot/throttle'],
+      run_condition='run_pilot')
+```
+
+## Model Export
+
+### TorchScript (JIT Compilation)
+
+```python
+import torch
+from donkeycar.parts.pytorch.ResNet18 import ResNet18
+
+# Load model
+model = ResNet18(input_shape=(1, 3, 224, 224))
+model.load_state_dict(torch.load('./models/resnet18.pth'))
+model.eval()
+
+# Create example input
+example_input = torch.rand(1, 3, 224, 224)
+
+# Trace and export
+traced_model = torch.jit.trace(model, example_input)
+traced_model.save('./models/resnet18_traced.pt')
+
+# Load traced model
+loaded_model = torch.jit.load('./models/resnet18_traced.pt')
+```
+
+### ONNX Export
+
+```python
+import torch
+import torch.onnx
+
+# Load model
+model = ResNet18(input_shape=(1, 3, 224, 224))
+model.load_state_dict(torch.load('./models/resnet18.pth'))
+model.eval()
+
+# Create example input
+dummy_input = torch.randn(1, 3, 224, 224)
+
+# Export to ONNX
+torch.onnx.export(
+    model,
+    dummy_input,
+    './models/resnet18.onnx',
+    export_params=True,
+    opset_version=11,
+    input_names=['input'],
+    output_names=['output'],
+    dynamic_axes={
+        'input': {0: 'batch_size'},
+        'output': {0: 'batch_size'}
+    }
+)
+```
+
+## Configuration
+
+In `myconfig.py`:
+
+```python
+# PyTorch Model
+DEFAULT_MODEL_TYPE = 'resnet18'
+MODEL_PATH = './models/resnet18.pth'
+
+# Device
+USE_CUDA = True  # Use GPU if available
+DEVICE = 'cuda' if USE_CUDA and torch.cuda.is_available() else 'cpu'
+
+# Training
+BATCH_SIZE = 16
+LEARNING_RATE = 0.0001
+WEIGHT_DECAY = 1e-5
+EPOCHS = 10
+
+# Image preprocessing (ResNet18 requirements)
+IMAGE_W = 224
+IMAGE_H = 224
+IMAGE_DEPTH = 3
+
+# Data augmentation
+AUG_FLIP_HORIZONTAL = True
+AUG_BRIGHTNESS = 0.2
+AUG_CONTRAST = 0.2
+AUG_SATURATION = 0.2
+
+# Training/validation split
+TRAIN_TEST_SPLIT = 0.8
+```
+
+## Creating Custom PyTorch Models
+
+```python
+import torch
+import torch.nn as nn
+
+class CustomPilot(nn.Module):
+    def __init__(self, input_shape=(1, 3, 120, 160)):
+        super().__init__()
+        
+        self.conv_layers = nn.Sequential(
+            nn.Conv2d(3, 24, kernel_size=5, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(24, 32, kernel_size=5, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1),
+            nn.ReLU(),
+            nn.Flatten()
+        )
+        
+        # Calculate flattened size
+        with torch.no_grad():
+            dummy_input = torch.zeros(input_shape)
+            conv_output_size = self.conv_layers(dummy_input).shape[1]
+        
+        self.fc_layers = nn.Sequential(
+            nn.Linear(conv_output_size, 100),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(100, 50),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(50, 2)  # angle, throttle
+        )
+    
+    def forward(self, x):
+        x = self.conv_layers(x)
+        x = self.fc_layers(x)
+        return x
+
+# Usage
+model = CustomPilot(input_shape=(1, 3, 120, 160))
+print(model)
+```
+
+## Performance Optimization
+
+### Mixed Precision Training
+
+```python
+from torch.cuda.amp import autocast, GradScaler
+
+scaler = GradScaler()
+
+for images, labels in train_loader:
+    images = images.to(device)
+    labels = labels.to(device)
+    
+    optimizer.zero_grad()
+    
+    # Mixed precision
+    with autocast():
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+    
+    # Scaled backpropagation
+    scaler.scale(loss).backward()
+    scaler.step(optimizer)
+    scaler.update()
+```
+
+### Model Pruning
+
+```python
+import torch.nn.utils.prune as prune
+
+# Prune 20% of weights
+for name, module in model.named_modules():
+    if isinstance(module, nn.Conv2d) or isinstance(module, nn.Linear):
+        prune.l1_unstructured(module, name='weight', amount=0.2)
+        prune.remove(module, 'weight')  # Make pruning permanent
+```
+
+## Common Issues
+
+### CUDA Out of Memory
+
+- Reduce batch size
+- Use gradient accumulation
+- Enable mixed precision training
+- Clear cache: `torch.cuda.empty_cache()`
+
+### Model Not Learning
+
+- Check learning rate (try 1e-4 to 1e-3)
+- Verify data preprocessing
+- Check for label errors
+- Monitor gradients for vanishing/exploding
+
+### Inference Too Slow
+
+- Convert to TorchScript
+- Use GPU if available
+- Batch multiple frames
+- Optimize image preprocessing
+
+## Next Steps
+
+- [Keras Models](/parts/keras-models) - Alternative framework
+- [Data Stores](/parts/data-stores) - Prepare training data
+- [Custom Parts](/parts/custom-parts) - Create custom models

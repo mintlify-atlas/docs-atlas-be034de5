@@ -1,0 +1,133 @@
+---
+title: donkey createcar
+description: Create a new Donkeycar application with folder structure and templates
+---
+
+The `donkey createcar` command sets up a complete car project with all necessary files and folder structure. This is typically the first command you'll run when starting a new Donkeycar project.
+
+## Usage
+
+```bash
+donkey createcar [options]
+```
+
+## Options
+
+<ParamField path="--path" type="string" default="~/mycar">
+  Path where the car folder will be created. If not specified, creates `~/mycar`.
+</ParamField>
+
+<ParamField path="--template" type="string" default="complete">
+  Name of the car template to use. The template determines which application files are copied.
+</ParamField>
+
+<ParamField path="--overwrite" type="boolean" default="false">
+  Replace existing files if they already exist. Without this flag, existing files will not be modified.
+</ParamField>
+
+## Templates
+
+The `--template` option determines which application template is used. Common templates include:
+
+- **complete** (default): Full-featured car application with all standard components
+- Other templates may be available depending on your Donkeycar installation
+
+Templates are stored in the `donkeycar/templates/` directory and include:
+- Application file (`manage.py`)
+- Configuration file (`config.py`)
+- Training script (`train.py`)
+- Calibration script (`calibrate.py`)
+
+## What Gets Created
+
+When you run `createcar`, the following structure is created:
+
+```
+mycar/
+├── config.py          # Default configuration settings
+├── myconfig.py        # Your custom configuration overrides
+├── manage.py          # Main application entry point
+├── train.py           # Training script
+├── calibrate.py       # Calibration script
+├── data/              # Recorded driving data (tubs)
+├── models/            # Trained neural network models
+└── logs/              # Application logs
+```
+
+### Key Files
+
+- **manage.py**: The main application script for running your car. Execute this to start driving.
+- **config.py**: Default configuration with all available settings
+- **myconfig.py**: Your personal configuration overrides. Edit this file to customize your car without modifying the default config.
+- **train.py**: Script for training models (alternative to using `donkey train`)
+- **calibrate.py**: Script for calibrating actuators (alternative to using `donkey calibrate`)
+
+## Examples
+
+### Create a car in the default location
+
+```bash
+donkey createcar
+```
+
+This creates a new car project at `~/mycar`.
+
+### Create a car with a custom path
+
+```bash
+donkey createcar --path ~/my_awesome_car
+```
+
+### Create a car with a specific template
+
+```bash
+donkey createcar --path ~/mycar --template complete
+```
+
+### Overwrite existing car files
+
+```bash
+donkey createcar --path ~/mycar --overwrite
+```
+
+<Warning>
+Using `--overwrite` will replace existing `manage.py`, `config.py`, `train.py`, and `calibrate.py` files. Your `myconfig.py` file will not be overwritten, preserving your custom settings.
+</Warning>
+
+## Output Example
+
+```
+Creating car folder: /home/user/mycar
+making dir /home/user/mycar
+Creating data & model folders.
+making dir /home/user/mycar/models
+making dir /home/user/mycar/data
+making dir /home/user/mycar/logs
+Copying car application template: complete
+Copying car config defaults. Adjust these before starting your car.
+Copying train script. Adjust these before starting your car.
+Copying calibrate script. Adjust these before starting your car.
+Copying my car config overrides
+Donkey setup complete.
+```
+
+## Next Steps
+
+After creating your car:
+
+1. **Configure your car**: Edit `myconfig.py` to match your hardware setup
+2. **Calibrate actuators**: Use [`donkey calibrate`](/cli/calibrate) to calibrate your steering and throttle
+3. **Start driving**: Run `python manage.py drive` to start the car application
+4. **Collect data**: Drive your car manually to collect training data
+5. **Train a model**: Use [`donkey train`](/cli/train) to train an autopilot model
+
+## Updating an Existing Car
+
+To update an existing car to the latest templates:
+
+```bash
+cd ~/mycar
+donkey update --template complete
+```
+
+This will overwrite the template files while preserving your `myconfig.py`.

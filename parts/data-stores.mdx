@@ -1,0 +1,529 @@
+---
+title: Data Store Parts
+description: Recording and managing training data in Donkeycar
+---
+
+Data store parts handle recording, storing, and managing driving data for training autonomous models.
+
+## Tub Format
+
+Donkeycar uses "tubs" to store sensor data. A tub is a directory containing:
+- **manifest.json** - Metadata and record index
+- **images/** - Directory of image files
+- **records/** - JSON files with non-image data (optional in v2)
+
+### Tub Structure
+
+```
+data/
+  tub_1/
+    manifest.json       # Record index and metadata
+    images/
+      0_cam_image_array.jpg
+      1_cam_image_array.jpg
+      ...
+```
+
+## TubWriter
+
+Main part for recording data during driving.
+
+**Location**: `donkeycar/parts/tub_v2.py:119`
+
+```python
+from donkeycar.parts.tub_v2 import TubWriter
+
+tub_writer = TubWriter(
+    base_path='./data/tub_1',
+    inputs=['cam/image_array', 'user/angle', 'user/throttle', 'user/mode'],
+    types=['image_array', 'float', 'float', 'str'],
+    metadata=['location:track_1', 'driver:alice'],
+    max_catalog_len=1000
+)
+```
+
+**Parameters**:
+- `base_path`: Directory path for the tub
+- `inputs`: List of input keys to record
+- `types`: Data types for each input
+- `metadata`: Optional metadata key:value pairs
+- `max_catalog_len`: Records per catalog file
+
+**Data Types**:
+- `'image_array'` - numpy array saved as JPG
+- `'gray16_array'` - 16-bit grayscale saved as PNG
+- `'float'` - floating point number
+- `'int'` - integer
+- `'str'` - string
+- `'boolean'` - boolean
+- `'nparray'` - numpy array (saved as list)
+- `'list'` or `'vector'` - Python list
+
+### Adding to Vehicle
+
+```python
+# In manage.py
+from donkeycar.parts.tub_v2 import TubWriter
+
+# Define what to record
+inputs = [
+    'cam/image_array',
+    'user/angle', 'user/throttle', 'user/mode',
+    'pilot/angle', 'pilot/throttle',
+    'imu/accel_x', 'imu/accel_y', 'imu/accel_z'
+]
+
+types = [
+    'image_array',
+    'float', 'float', 'str',
+    'float', 'float',
+    'float', 'float', 'float'
+]
+
+# Create tub path with timestamp
+import datetime
+tub_path = os.path.join(
+    cfg.DATA_PATH,
+    'tub_' + datetime.datetime.now().strftime('%y-%m-%d')
+)
+
+# Create TubWriter
+tub_writer = TubWriter(
+    base_path=tub_path,
+    inputs=inputs,
+    types=types
+)
+
+# Add to vehicle
+V.add(tub_writer, 
+      inputs=inputs,
+      outputs=['tub/num_records'],
+      run_condition='recording')
+```
+
+**Recording Control**:
+
+The `run_condition='recording'` means the TubWriter only runs when the `recording` input is True:
+
+```python
+# Controller sets recording flag
+V.add(controller,
+      outputs=['user/angle', 'user/throttle', 'user/mode', 'recording'])
+
+V.add(tub_writer,
+      inputs=inputs,
+      outputs=['tub/num_records'],
+      run_condition='recording')  # Only runs when recording=True
+```
+
+## Tub Class
+
+Lower-level interface for reading and writing tubs.
+
+**Location**: `donkeycar/parts/tub_v2.py:17`
+
+```python
+from donkeycar.parts.tub_v2 import Tub
+
+# Open existing tub
+tub = Tub(base_path='./data/tub_1', read_only=True)
+
+# Iterate over records
+for record in tub:
+    img = record['cam/image_array']
+    angle = record['user/angle']
+    throttle = record['user/throttle']
+    print(f"Angle: {angle:.3f}, Throttle: {throttle:.3f}")
+
+# Get number of records
+print(f"Total records: {len(tub)}")
+
+# Close tub
+tub.close()
+```
+
+### Writing Records Manually
+
+```python
+from donkeycar.parts.tub_v2 import Tub
+import numpy as np
+
+# Create new tub
+tub = Tub(
+    base_path='./data/test_tub',
+    inputs=['cam/image_array', 'user/angle', 'user/throttle'],
+    types=['image_array', 'float', 'float']
+)
+
+# Write records
+for i in range(10):
+    img = np.random.randint(0, 255, (120, 160, 3), dtype=np.uint8)
+    record = {
+        'cam/image_array': img,
+        'user/angle': 0.0,
+        'user/throttle': 0.5
+    }
+    tub.write_record(record)
+
+tub.close()
+```
+
+## TubWiper
+
+Deletes records from the end of a tub during recording.
+
+**Location**: `donkeycar/parts/tub_v2.py:144`
+
+```python
+from donkeycar.parts.tub_v2 import TubWiper
+
+# Create wiper
+wiper = TubWiper(
+    tub=tub_writer.tub,
+    num_records=20  # Number of records to delete
+)
+
+# Add to vehicle
+V.add(wiper, inputs=['user/erase'], run_condition='user/erase')
+```
+
+**Usage**: When the controller triggers the erase button, the last N records are deleted. Useful for removing bad driving segments immediately.
+
+**Debouncing**: TubWiper only deletes once per button press (requires button release before next deletion).
+
+## Manifest System
+
+The manifest tracks all records and their metadata.
+
+**Location**: `donkeycar/parts/datastore_v2.py`
+
+### Manifest Structure
+
+```json
+{
+  "inputs": ["cam/image_array", "user/angle", "user/throttle"],
+  "types": ["image_array", "float", "float"],
+  "start": 1646438400.0,
+  "session_id": [1, "abc123"],
+  "current_index": 1000,
+  "deleted_indexes": [10, 15, 23],
+  "metadata": {
+    "location": "track_1",
+    "driver": "alice"
+  },
+  "records": [
+    {
+      "_index": 0,
+      "_timestamp_ms": 1646438401000,
+      "_session_id": "abc123",
+      "cam/image_array": "0_cam_image_array.jpg",
+      "user/angle": 0.0,
+      "user/throttle": 0.5
+    },
+    ...
+  ]
+}
+```
+
+### ManifestIterator
+
+```python
+from donkeycar.parts.tub_v2 import Tub
+
+tub = Tub('./data/tub_1')
+
+# Iterate (automatically skips deleted records)
+for record in tub:
+    print(record)
+
+# Manual iteration
+iterator = iter(tub)
+first_record = next(iterator)
+```
+
+## Data Management
+
+### Deleting Records
+
+```python
+from donkeycar.parts.tub_v2 import Tub
+
+tub = Tub('./data/tub_1')
+
+# Delete specific records
+tub.delete_records([10, 15, 23])
+
+# Delete last N records
+tub.delete_last_n_records(20)
+
+# Restore deleted records
+tub.restore_records([10, 15])
+
+tub.close()
+```
+
+**Note**: Deleted records are marked in the manifest but files remain on disk. Use `donkey makemovie` or manual cleanup to remove files.
+
+### Merging Tubs
+
+```bash
+# Command line
+donkey tubclean ./data/tub_1 ./data/tub_2 --output ./data/tub_merged
+```
+
+### Filtering Tubs
+
+```python
+import json
+from donkeycar.parts.tub_v2 import Tub
+
+# Filter by criteria
+src_tub = Tub('./data/tub_1')
+dst_tub = Tub(
+    './data/tub_filtered',
+    inputs=src_tub.inputs,
+    types=src_tub.types
+)
+
+for record in src_tub:
+    # Only keep records with throttle > 0.1
+    if record['user/throttle'] > 0.1:
+        dst_tub.write_record(record)
+
+src_tub.close()
+dst_tub.close()
+```
+
+## Legacy Tub Format (v1)
+
+Older tub format with separate JSON files per record.
+
+**Location**: `donkeycar/parts/datastore.py`
+
+```python
+from donkeycar.parts.datastore import Tub
+
+# Open legacy tub
+tub = Tub('./data/old_tub_1')
+
+# Get records
+for index in tub.get_index():
+    record = tub.get_record(index)
+    print(record)
+```
+
+### Converting v1 to v2
+
+```bash
+donkey tubconvert ./data/old_tub_1 ./data/new_tub_1
+```
+
+## Configuration
+
+In `myconfig.py`:
+
+```python
+# Data paths
+DATA_PATH = './data'
+
+# Recording
+AUTO_RECORD_ON_THROTTLE = True  # Auto-start recording with throttle
+
+# Tub settings
+MAX_CATALOG_LEN = 1000  # Records per manifest file
+
+# What to record
+RECORD_DURING_AI = False  # Record pilot outputs
+AUTO_CREATE_NEW_TUB = True  # Create new tub each session
+
+# Image format
+IMAGE_FORMAT = 'jpg'  # or 'png'
+IMAGE_QUALITY = 95  # JPEG quality (1-100)
+```
+
+## Tub Commands
+
+### List Tubs
+
+```bash
+donkey tublist ./data
+```
+
+### Tub Info
+
+```bash
+donkey tubplot ./data/tub_1
+```
+
+### Make Movie
+
+```bash
+donkey makemovie --tub ./data/tub_1 --out ./movies/tub_1.mp4
+```
+
+### Clean Tub
+
+Remove deleted records:
+
+```bash
+donkey tubclean ./data/tub_1 --fix
+```
+
+### Histogram
+
+View data distribution:
+
+```bash
+donkey tubhist ./data/tub_1 --rec user/angle
+```
+
+## Training Pipeline
+
+### Using Tubs for Training
+
+```python
+from donkeycar.parts.tub_v2 import Tub
+from donkeycar.pipeline.training import train
+import donkeycar as dk
+
+# Load config
+cfg = dk.load_config()
+
+# Specify tub paths
+tub_paths = [
+    './data/tub_1',
+    './data/tub_2',
+    './data/tub_3'
+]
+
+# Train
+history = train(
+    cfg=cfg,
+    tub_paths=tub_paths,
+    model_type='linear',
+    transfer_model=None
+)
+```
+
+### Custom Data Loading
+
+```python
+from donkeycar.parts.tub_v2 import Tub
+from PIL import Image
+import numpy as np
+
+def load_dataset(tub_path):
+    tub = Tub(tub_path)
+    images = []
+    labels = []
+    
+    for record in tub:
+        # Get image
+        img = record['cam/image_array']
+        images.append(img)
+        
+        # Get labels
+        angle = record['user/angle']
+        throttle = record['user/throttle']
+        labels.append([angle, throttle])
+    
+    tub.close()
+    
+    return np.array(images), np.array(labels)
+
+X, y = load_dataset('./data/tub_1')
+print(f"Loaded {len(X)} samples")
+```
+
+## Data Augmentation
+
+### Image Transformations
+
+```python
+import cv2
+import numpy as np
+
+def augment_image(img, angle):
+    # Random flip
+    if np.random.rand() > 0.5:
+        img = cv2.flip(img, 1)
+        angle = -angle
+    
+    # Random brightness
+    brightness = np.random.uniform(0.5, 1.5)
+    img = np.clip(img * brightness, 0, 255).astype(np.uint8)
+    
+    # Random shadow
+    x1 = np.random.randint(0, img.shape[1])
+    y1 = 0
+    x2 = np.random.randint(0, img.shape[1])
+    y2 = img.shape[0]
+    shadow_img = img.copy()
+    cv2.line(shadow_img, (x1, y1), (x2, y2), (0, 0, 0), img.shape[1])
+    alpha = np.random.uniform(0.3, 0.7)
+    img = cv2.addWeighted(img, alpha, shadow_img, 1 - alpha, 0)
+    
+    return img, angle
+```
+
+## Best Practices
+
+### Recording Quality Data
+
+1. **Smooth Driving**: Avoid jerky movements
+2. **Variety**: Record multiple laps, both directions
+3. **Recovery**: Record recovery from edges
+4. **Lighting**: Record in different lighting conditions
+5. **Clean Data**: Delete bad segments immediately with TubWiper
+
+### Data Organization
+
+```
+data/
+  track_1/
+    tub_01_smooth_laps/
+    tub_02_recovery/
+    tub_03_reverse/
+  track_2/
+    tub_01_smooth_laps/
+```
+
+### Storage Management
+
+- Each image ~10-50KB (depends on compression)
+- 1000 records ≈ 10-50MB
+- Monitor disk space: `df -h`
+- Archive old tubs: `tar -czf tub_1.tar.gz data/tub_1/`
+
+## Common Issues
+
+### "Manifest is full"
+
+Increase `max_catalog_len`:
+```python
+tub_writer = TubWriter(
+    base_path='./data/tub_1',
+    max_catalog_len=5000  # Increase from default 1000
+)
+```
+
+### Missing Images
+
+Check file permissions and disk space:
+```bash
+ls -lh data/tub_1/images/
+df -h
+```
+
+### Corrupted Tub
+
+Verify and fix:
+```bash
+donkey tubclean ./data/tub_1 --fix
+```
+
+## Next Steps
+
+- [Keras Models](/parts/keras-models) - Train models with recorded data
+- [PyTorch Models](/parts/pytorch-models) - Alternative training framework  
+- [Custom Parts](/parts/custom-parts) - Create custom recording logic

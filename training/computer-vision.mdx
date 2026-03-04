@@ -1,0 +1,480 @@
+---
+title: Computer Vision Autopilot
+description: Use OpenCV-based line following and computer vision for autonomous driving
+---
+
+Donkeycar supports computer vision (CV) based autopilot as an alternative to deep learning. This approach uses classical computer vision techniques like color detection, edge detection, and PID control to follow lines or paths.
+
+## Overview
+
+The computer vision autopilot:
+- Uses **OpenCV** for image processing
+- Detects colored lines or features in real-time
+- Uses **PID control** to steer toward targets
+- Requires no training data
+- Works immediately after configuration
+
+**Use cases:**
+- Line following on marked tracks
+- Quick prototyping without training
+- Educational demonstrations
+- Backup autopilot system
+
+## Line Follower
+
+The LineFollower is the primary CV autopilot that follows colored lines using HSV color detection.
+
+### How It Works
+
+1. **Capture**: Get camera image
+2. **Slice**: Extract horizontal slice at configured Y position
+3. **Convert**: Transform RGB to HSV color space
+4. **Threshold**: Apply color mask to find target color
+5. **Detect**: Calculate histogram to find line position
+6. **Control**: Use PID to steer toward target position
+7. **Speed**: Adjust throttle based on steering correction
+
+### Template Setup
+
+The CV control template is available at `donkeycar/templates/cv_control.py`:
+
+```bash
+donkey createcar --path ~/mycar --template cv_control
+```
+
+This creates a car configured for computer vision autopilot.
+
+### Configuration
+
+Configure CV parameters in `myconfig.py`:
+
+```python
+#
+# Computer Vision Control
+#
+CV_CONTROLLER_MODULE = "donkeycar.parts.line_follower"
+CV_CONTROLLER_CLASS = "LineFollower"
+CV_CONTROLLER_INPUTS = ['cam/image_array']
+CV_CONTROLLER_OUTPUTS = ['pilot/steering', 'pilot/throttle', 'cv/image_array']
+CV_CONTROLLER_CONDITION = "run_pilot"  # Only run in autopilot mode
+
+#
+# Line Detection Parameters
+#
+SCAN_Y = 60  # Vertical pixel position to scan (from top)
+SCAN_HEIGHT = 10  # Height of scan region in pixels
+
+#
+# HSV Color Threshold (for yellow line)
+#
+COLOR_THRESHOLD_LOW = (20, 100, 100)   # HSV lower bound
+COLOR_THRESHOLD_HIGH = (30, 255, 255)  # HSV upper bound
+
+#
+# Target and Control
+#
+TARGET_PIXEL = None  # None = auto-detect on first frame
+TARGET_THRESHOLD = 10  # Minimum pixel distance before steering change
+CONFIDENCE_THRESHOLD = 0.1  # Minimum confidence to trust detection
+
+#
+# Throttle Control
+#
+THROTTLE_INITIAL = 0.3  # Starting throttle
+THROTTLE_MAX = 0.5      # Maximum throttle
+THROTTLE_MIN = 0.2      # Minimum throttle
+THROTTLE_STEP = 0.01    # Throttle adjustment per frame
+
+#
+# PID Controller
+#
+PID_P = 0.01   # Proportional gain
+PID_I = 0.00   # Integral gain  
+PID_D = 0.001  # Derivative gain
+
+# PID tuning buttons (optional)
+PID_P_DELTA = 0.001
+PID_D_DELTA = 0.001
+DEC_PID_P_BTN = 'square'   # Decrease P
+INC_PID_P_BTN = 'triangle' # Increase P
+DEC_PID_D_BTN = 'cross'    # Decrease D
+INC_PID_D_BTN = 'circle'   # Increase D
+
+#
+# Overlay Image (for debugging)
+#
+OVERLAY_IMAGE = True  # Show detection overlay on web UI
+```
+
+### LineFollower Implementation
+
+The LineFollower class processes images and generates control signals:
+
+```python
+from donkeycar.parts.line_follower import LineFollower
+from simple_pid import PID
+
+# Create PID controller
+pid = PID(Kp=cfg.PID_P, Ki=cfg.PID_I, Kd=cfg.PID_D)
+
+# Create line follower
+line_follower = LineFollower(pid, cfg)
+
+# Run on each frame
+steering, throttle, debug_img = line_follower.run(cam_img)
+```
+
+**Key methods:**
+
+```python
+def get_i_color(self, cam_img):
+    """Extract and analyze horizontal slice for color detection"""
+    # Take horizontal slice
+    scan_line = cam_img[self.scan_y:self.scan_y + self.scan_height, :, :]
+    
+    # Convert to HSV
+    img_hsv = cv2.cvtColor(scan_line, cv2.COLOR_RGB2HSV)
+    
+    # Apply color mask
+    mask = cv2.inRange(img_hsv, self.color_thr_low, self.color_thr_hi)
+    
+    # Find peak in histogram
+    hist = np.sum(mask, axis=0)
+    max_yellow = np.argmax(hist)
+    
+    return max_yellow, hist[max_yellow], mask
+```
+
+```python
+def run(self, cam_img):
+    """Main control loop"""
+    # Detect line position
+    max_yellow, confidence, mask = self.get_i_color(cam_img)
+    
+    # Auto-set target on first detection
+    if self.target_pixel is None:
+        self.target_pixel = max_yellow
+    
+    # Update PID setpoint
+    if self.pid_st.setpoint != self.target_pixel:
+        self.pid_st.setpoint = self.target_pixel
+    
+    if confidence >= self.confidence_threshold:
+        # Calculate steering from PID
+        self.steering = self.pid_st(max_yellow)
+        
+        # Adjust throttle based on steering error
+        if abs(max_yellow - self.target_pixel) > self.target_threshold:
+            # Slow down for turns
+            if self.throttle > self.throttle_min:
+                self.throttle -= self.delta_th
+        else:
+            # Speed up on straights
+            if self.throttle < self.throttle_max:
+                self.throttle += self.delta_th
+    
+    # Add overlay for debugging
+    if self.overlay_image:
+        cam_img = self.overlay_display(cam_img, mask, max_yellow, confidence)
+    
+    return self.steering, self.throttle, cam_img
+```
+
+### Color Calibration
+
+Find the correct HSV color range for your line:
+
+**Using HSV color picker:**
+```bash
+python donkeycar/donkeycar/parts/cv.py \
+    --camera 0 \
+    --width 160 \
+    --height 120 \
+    --aug RGB2HSV
+```
+
+**Common HSV ranges:**
+
+```python
+# Yellow line
+COLOR_THRESHOLD_LOW = (20, 100, 100)
+COLOR_THRESHOLD_HIGH = (30, 255, 255)
+
+# Red line
+COLOR_THRESHOLD_LOW = (0, 100, 100)
+COLOR_THRESHOLD_HIGH = (10, 255, 255)
+
+# Blue line
+COLOR_THRESHOLD_LOW = (100, 100, 100)
+COLOR_THRESHOLD_HIGH = (130, 255, 255)
+
+# Green line
+COLOR_THRESHOLD_LOW = (40, 100, 100)
+COLOR_THRESHOLD_HIGH = (80, 255, 255)
+
+# White line
+COLOR_THRESHOLD_LOW = (0, 0, 200)
+COLOR_THRESHOLD_HIGH = (180, 30, 255)
+```
+
+**Tips:**
+- Test under actual lighting conditions
+- HSV is more robust to lighting than RGB
+- Increase S (saturation) min to ignore white/gray
+- Adjust V (value) for brightness variations
+
+### PID Tuning
+
+Tune PID parameters for smooth control:
+
+**Tuning process:**
+1. Start with P only: `PID_P=0.01, PID_I=0, PID_D=0`
+2. Increase P until oscillation starts
+3. Add D to dampen oscillations: `PID_D=0.001`
+4. Optionally add I to eliminate steady-state error
+
+**Live tuning with buttons:**
+```python
+# Configure buttons in myconfig.py
+DEC_PID_P_BTN = 'square'   # Decrease P gain
+INC_PID_P_BTN = 'triangle' # Increase P gain
+DEC_PID_D_BTN = 'cross'    # Decrease D gain
+INC_PID_D_BTN = 'circle'   # Increase D gain
+
+PID_P_DELTA = 0.001  # Step size for P adjustment
+PID_D_DELTA = 0.001  # Step size for D adjustment
+```
+
+**PID effect:**
+- **P (Proportional)**: Larger P = stronger correction, but can oscillate
+- **I (Integral)**: Eliminates steady-state error, but can cause overshoot
+- **D (Derivative)**: Dampens oscillations, smooths control
+
+## OpenCV Parts
+
+Donkeycar includes many OpenCV-based image processing parts in `donkeycar/parts/cv.py`:
+
+### Color Space Conversion
+
+```python
+from donkeycar.parts.cv import ImgRGB2HSV, ImgHSV2RGB
+
+# Convert RGB to HSV
+rgb_to_hsv = ImgRGB2HSV()
+hsv_img = rgb_to_hsv.run(rgb_img)
+
+# Other conversions available:
+# ImgRGB2BGR, ImgBGR2RGB
+# ImgRGB2GRAY, ImgBGR2GRAY, ImgHSV2GRAY
+# ImgGRAY2RGB, ImgGRAY2BGR
+```
+
+### Image Filtering
+
+```python
+from donkeycar.parts.cv import ImgGaussianBlur, ImgSimpleBlur
+
+# Gaussian blur
+gauss_blur = ImgGaussianBlur(kernel_size=5)
+blurred = gauss_blur.run(img)
+
+# Simple blur  
+simple_blur = ImgSimpleBlur(kernel_size=5)
+blurred = simple_blur.run(img)
+```
+
+### Edge Detection
+
+```python
+from donkeycar.parts.cv import ImgCanny
+
+# Canny edge detection
+canny = ImgCanny(low_threshold=60, high_threshold=110, aperture_size=3)
+edges = canny.run(gray_img)
+```
+
+### Image Masking
+
+```python
+from donkeycar.parts.cv import ImgTrapezoidalMask, ImgCropMask
+
+# Trapezoidal mask (region of interest)
+mask = ImgTrapezoidalMask(
+    left=40,           # Top-left x
+    right=120,         # Top-right x  
+    bottom_left=0,     # Bottom-left x
+    bottom_right=160,  # Bottom-right x
+    top=60,            # Top y
+    bottom=120,        # Bottom y
+    fill=[255,255,255] # Keep pixels in region
+)
+masked = mask.run(img)
+
+# Crop mask (rectangular)
+crop = ImgCropMask(left=10, top=40, right=10, bottom=20)
+cropped = crop.run(img)
+```
+
+### Image Transformations
+
+```python
+from donkeycar.parts.cv import ImageScale, ImageResize, ImageRotateBound
+
+# Scale image
+scale = ImageScale(scale=0.5)  # 50% size
+scaled = scale.run(img)
+
+# Resize to specific dimensions
+resize = ImageResize(width=320, height=240)
+resized = resize.run(img)
+
+# Rotate image
+rotate = ImageRotateBound(rot_deg=15)  # 15 degrees
+rotated = rotate.run(img)
+```
+
+## Custom CV Controller
+
+Create your own CV-based autopilot:
+
+```python
+import cv2
+import numpy as np
+from simple_pid import PID
+
+class CustomCVController:
+    def __init__(self, pid, cfg):
+        self.pid = pid
+        self.cfg = cfg
+        
+    def run(self, img_arr):
+        # Your custom image processing
+        gray = cv2.cvtColor(img_arr, cv2.COLOR_RGB2GRAY)
+        edges = cv2.Canny(gray, 50, 150)
+        
+        # Find features and calculate error
+        # ... your detection logic ...
+        error = 0  # Calculate error from center
+        
+        # Use PID to calculate steering
+        steering = self.pid(error)
+        throttle = self.cfg.THROTTLE_INITIAL
+        
+        return steering, throttle, img_arr
+```
+
+**Register in myconfig.py:**
+```python
+CV_CONTROLLER_MODULE = "mycontroller"  # Your Python file
+CV_CONTROLLER_CLASS = "CustomCVController"
+CV_CONTROLLER_INPUTS = ['cam/image_array']
+CV_CONTROLLER_OUTPUTS = ['pilot/steering', 'pilot/throttle', 'cv/image_array']
+```
+
+## CV Pipeline Example
+
+Chain multiple CV operations:
+
+```python
+from donkeycar.parts.cv import Pipeline
+
+# Define processing steps
+steps = [
+    {'f': ImgRGB2HSV().run, 'args': [], 'kwargs': {}},
+    {'f': ImgGaussianBlur(kernel_size=5).run, 'args': [], 'kwargs': {}},
+    # ... more steps ...
+]
+
+# Create pipeline
+pipeline = Pipeline(steps)
+
+# Process image through pipeline
+result = pipeline.run(img_arr)
+```
+
+## Debugging CV
+
+### Display Overlay
+
+The LineFollower includes an overlay display for debugging:
+
+```python
+def overlay_display(self, cam_img, mask, max_yellow, confidence):
+    """Overlay detection visualization on image"""
+    # Expand mask to 3 channels
+    mask_exp = np.stack((mask,) * 3, axis=-1)
+    
+    # Copy original image
+    img = np.copy(cam_img)
+    
+    # Overlay mask on scan region
+    iSlice = self.scan_y
+    img[iSlice:iSlice + self.scan_height, :, :] = mask_exp
+    
+    # Add text overlay
+    cv2.putText(img, f"STEERING:{self.steering:.1f}",
+                color=(0,0,0), org=(10,10),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                fontScale=0.4)
+    cv2.putText(img, f"THROTTLE:{self.throttle:.2f}",
+                color=(0,0,0), org=(10,20),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                fontScale=0.4)
+    cv2.putText(img, f"I YELLOW:{max_yellow:d}",
+                color=(0,0,0), org=(10,30),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                fontScale=0.4)
+    cv2.putText(img, f"CONF:{confidence:.2f}",
+                color=(0,0,0), org=(10,40),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                fontScale=0.4)
+    
+    return img
+```
+
+### Test CV Parts
+
+Test individual CV operations:
+
+```bash
+# View camera with augmentation
+python donkeycar/donkeycar/parts/cv.py \
+    --camera 0 \
+    --width 160 \
+    --height 120 \
+    --aug CANNY  # or BLUR, GBLUR, RGB2HSV, etc.
+```
+
+## Advantages and Limitations
+
+### Advantages
+
+- **No training required**: Works immediately after configuration
+- **Interpretable**: Easy to understand and debug
+- **Fast**: Real-time processing with low latency
+- **Predictable**: Deterministic behavior
+- **Resource efficient**: Runs on limited hardware
+
+### Limitations
+
+- **Requires marked track**: Needs clear lines or features
+- **Sensitive to lighting**: HSV helps but not perfect
+- **Limited generalization**: Works only on similar conditions
+- **Manual tuning**: Requires PID and color calibration
+- **Less robust**: Can't handle complex scenarios like DL
+
+## Best Practices
+
+1. **Start simple**: Use LineFollower before custom implementations
+2. **Test color range**: Calibrate under actual track lighting
+3. **Tune PID carefully**: Start with P only, add D for smoothing
+4. **Use overlay**: Enable OVERLAY_IMAGE for debugging
+5. **Adjust scan region**: Position SCAN_Y where line is clearest
+6. **Set confidence threshold**: Ignore weak detections
+7. **Combine with DL**: Use CV as backup or training aid
+
+## Next Steps
+
+- [Deep Learning Models](/training/deep-learning) - Train neural network autopilots
+- [Get Driving](/guides/driving) - Drive with CV autopilot
+- [Calibration](/guides/calibration) - Tune your car for better control

@@ -1,0 +1,409 @@
+---
+title: Controller Parts
+description: Controller parts for user input in Donkeycar
+---
+
+Controller parts handle user input from joysticks, game controllers, RC receivers, and web interfaces.
+
+## Web Controller
+
+Browser-based control interface for driving your Donkey car.
+
+**Location**: `donkeycar/parts/web_controller/web.py`
+
+```python
+from donkeycar.parts.controller import LocalWebController
+
+ctr = LocalWebController(
+    port=8887,
+    mode='user'
+)
+```
+
+**Features**:
+- Web-based UI accessible from any device
+- Keyboard or on-screen controls
+- Real-time video streaming
+- Mode switching (user/autopilot)
+- Recording control
+
+**Usage**:
+```python
+V.add(ctr, 
+      inputs=['cam/image_array'],
+      outputs=['user/angle', 'user/throttle', 'user/mode', 'recording'],
+      threaded=True)
+```
+
+Access at: `http://<vehicle-ip>:8887`
+
+## Physical Joystick Controllers
+
+All joystick controllers follow a common pattern:
+
+### Base Joystick Class
+
+**Location**: `donkeycar/parts/controller.py:17`
+
+The `Joystick` class provides low-level access to joystick devices via `/dev/input/js0`.
+
+```python
+from donkeycar.parts.controller import Joystick
+
+js = Joystick(dev_fn='/dev/input/js0')
+js.init()
+
+# Poll for events
+button, button_state, axis, axis_val = js.poll()
+```
+
+### JoystickController
+
+**Location**: `donkeycar/parts/controller.py:819`
+
+Base class that maps joystick inputs to vehicle actions.
+
+**Key Methods**:
+- `set_steering()` - Map axis to steering angle
+- `set_throttle()` - Map axis to throttle value
+- `toggle_mode()` - Switch between user/autopilot modes
+- `toggle_manual_recording()` - Start/stop recording
+- `increase_max_throttle()` / `decrease_max_throttle()` - Adjust throttle scale
+- `emergency_stop()` - Immediate stop sequence
+- `erase_last_N_records()` - Delete recent data
+
+## PlayStation Controllers
+
+### PS3 Controller
+
+**Location**: `donkeycar/parts/controller.py:1212`
+
+```python
+from donkeycar.parts.controller import PS3JoystickController
+
+ctr = PS3JoystickController(
+    throttle_dir=-1.0,           # -1 reverses throttle direction
+    throttle_scale=1.0,          # Throttle multiplier
+    steering_scale=1.0,          # Steering multiplier  
+    auto_record_on_throttle=True # Auto-record when throttle applied
+)
+```
+
+**Button Mapping**:
+- **Select**: Toggle driving mode (user/local_angle/local)
+- **Circle**: Toggle manual recording
+- **Triangle**: Erase last 100 records
+- **Cross**: Emergency stop
+- **D-pad Up**: Increase max throttle
+- **D-pad Down**: Decrease max throttle
+- **Start**: Toggle constant throttle
+- **L1/R1**: Chaos monkey (add steering bias for testing)
+
+**Stick Mapping**:
+- **Left Stick Horizontal**: Steering
+- **Right Stick Vertical**: Throttle
+
+**Setup**:
+```bash
+# Pair via Bluetooth
+sudo bluetoothctl
+[bluetooth]# agent on
+[bluetooth]# scan on
+# Press PS button to make discoverable
+[bluetooth]# pair <MAC_ADDRESS>
+[bluetooth]# trust <MAC_ADDRESS>
+[bluetooth]# connect <MAC_ADDRESS>
+```
+
+### PS4 Controller
+
+**Location**: `donkeycar/parts/controller.py:1290`
+
+```python
+from donkeycar.parts.controller import PS4JoystickController
+
+ctr = PS4JoystickController(
+    throttle_dir=-1.0,
+    throttle_scale=1.0,
+    steering_scale=1.0,
+    auto_record_on_throttle=True
+)
+```
+
+**Button Mapping**:
+- **Share**: Toggle driving mode
+- **Circle**: Toggle manual recording
+- **Triangle**: Erase last records
+- **Cross**: Emergency stop
+- **L1**: Increase max throttle
+- **R1**: Decrease max throttle
+- **Options**: Toggle constant throttle
+
+**Stick Mapping**:
+- **Left Stick Horizontal**: Steering
+- **Right Stick Vertical**: Throttle
+
+**PyGame PS4 Controller** (for Windows/cross-platform):
+
+**Location**: `donkeycar/parts/controller.py:1333`
+
+```python
+from donkeycar.parts.controller import PyGamePS4JoystickController
+
+ctr = PyGamePS4JoystickController(which_js=0)  # Index if multiple controllers
+```
+
+## Xbox Controllers
+
+### Xbox One Controller
+
+**Location**: `donkeycar/parts/controller.py:1355`
+
+```python
+from donkeycar.parts.controller import XboxOneJoystickController
+
+ctr = XboxOneJoystickController(
+    throttle_dir=-1.0,
+    throttle_scale=1.0,
+    steering_scale=1.0,
+    auto_record_on_throttle=True
+)
+```
+
+**Button Mapping**:
+- **A**: Toggle driving mode
+- **B**: Toggle manual recording
+- **X**: Erase last records
+- **Y**: Emergency stop
+- **Right Shoulder**: Increase throttle
+- **Left Shoulder**: Decrease throttle
+- **Options**: Toggle constant throttle
+
+**Stick Mapping**:
+- **Left Stick Horizontal**: Steering
+- **Right Stick Vertical**: Throttle
+- **Right Trigger**: Forward (Forza mode)
+- **Left Trigger**: Reverse (Forza mode)
+
+**Bluetooth Setup**:
+```bash
+# Edit /etc/modprobe.d/xbox_bt.conf
+sudo nano /etc/modprobe.d/xbox_bt.conf
+# Add line:
+options bluetooth disable_ertm=1
+
+# Reboot
+sudo reboot
+
+# Verify
+cat /sys/module/bluetooth/parameters/disable_ertm
+# Should print 'Y'
+```
+
+## Other Controllers
+
+### Logitech Gamepad F710
+
+**Location**: `donkeycar/parts/controller.py:1439`
+
+```python
+from donkeycar.parts.controller import LogitechJoystickController
+
+ctr = LogitechJoystickController()
+```
+
+**Button Mapping**:
+- **Start**: Toggle mode
+- **B**: Toggle recording
+- **Y**: Erase records
+- **A**: Emergency stop
+- **Back**: Toggle constant throttle
+- **R1/L1**: Chaos monkey
+- **D-pad Up/Down**: Adjust throttle
+
+### Nimbus Controller
+
+**Location**: `donkeycar/parts/controller.py:1514`
+
+For SteelSeries Nimbus (iOS/Apple TV controller).
+
+```python
+from donkeycar.parts.controller import NimbusController
+
+ctr = NimbusController()
+```
+
+### WiiU Pro Controller
+
+**Location**: `donkeycar/parts/controller.py:1546`
+
+```python
+from donkeycar.parts.controller import WiiUController
+
+ctr = WiiUController()
+```
+
+## RC Receiver
+
+For traditional RC transmitter/receiver setups using GPIO pins.
+
+**Location**: `donkeycar/parts/controller.py:246`
+
+```python
+from donkeycar.parts.controller import RCReceiver
+
+ctr = RCReceiver(
+    cfg,  # Config object with GPIO pins
+    debug=False
+)
+```
+
+**Configuration in myconfig.py**:
+```python
+STEERING_RC_GPIO = 26      # GPIO pin for steering channel
+THROTTLE_RC_GPIO = 20      # GPIO pin for throttle channel
+DATA_WIPER_RC_GPIO = 19    # GPIO pin for mode switch
+
+PIGPIO_STEERING_MID = 1500 # PWM value for center steering
+PIGPIO_MAX_FORWARD = 2000  # PWM value for full forward
+PIGPIO_STOPPED_PWM = 1500  # PWM value for stopped
+PIGPIO_MAX_REVERSE = 1000  # PWM value for full reverse
+PIGPIO_SHOW_STEERING_VALUE = False
+PIGPIO_INVERT = False
+PIGPIO_JITTER = 0.025      # Deadzone threshold
+
+AUTO_RECORD_ON_THROTTLE = True
+```
+
+**Requires**: `pigpio` library
+```bash
+sudo apt-get install pigpio python3-pigpio
+sudo systemctl enable pigpiod
+sudo systemctl start pigpiod
+```
+
+## Configuration
+
+In `myconfig.py`:
+
+```python
+# Controller type
+CONTROLLER_TYPE = 'ps4'  # Options: ps3, ps4, xbox, web, etc.
+
+# Joystick settings
+JOYSTICK_MAX_THROTTLE = 1.0      # Maximum throttle (0.0-1.0)
+JOYSTICK_STEERING_SCALE = 1.0    # Steering sensitivity
+JOYSTICK_THROTTLE_DIR = -1.0     # 1 or -1 to reverse throttle
+JOYSTICK_DEADZONE = 0.01         # Axis deadzone
+
+# Auto-recording
+AUTO_RECORD_ON_THROTTLE = True   # Start recording when throttle applied
+
+# Joystick device
+JOYSTICK_DEVICE_FILE = '/dev/input/js0'
+```
+
+## Adding Controllers to Vehicle
+
+```python
+# Web controller
+from donkeycar.parts.controller import LocalWebController
+ctr = LocalWebController()
+V.add(ctr, 
+      inputs=['cam/image_array'],
+      outputs=['user/angle', 'user/throttle', 'user/mode', 'recording'],
+      threaded=True)
+
+# Physical controller
+from donkeycar.parts.controller import PS4JoystickController
+ctr = PS4JoystickController()
+V.add(ctr, 
+      inputs=['cam/image_array'],
+      outputs=['user/angle', 'user/throttle', 'user/mode', 'recording'],
+      threaded=True)
+```
+
+## Testing Controllers
+
+Test controller connection:
+
+```bash
+# Check if joystick is detected
+ls /dev/input/js*
+
+# Test with jstest
+sudo apt-get install joystick
+jstest /dev/input/js0
+```
+
+Test in Python:
+
+```python
+from donkeycar.parts.controller import PS4Joystick
+
+js = PS4Joystick()
+js.init()
+js.show_map()  # Show button/axis mappings
+
+while True:
+    button, button_state, axis, axis_val = js.poll()
+    if button:
+        print(f"Button: {button}, State: {button_state}")
+    if axis:
+        print(f"Axis: {axis}, Value: {axis_val}")
+```
+
+## Creating Custom Controller Mappings
+
+Use the joystick creator tool:
+
+```bash
+donkey createjs
+```
+
+This will:
+1. Detect your controller
+2. Show button/axis codes
+3. Help you create a custom mapping
+
+**Location**: `donkeycar/parts/controller.py:348` (JoystickCreator)
+
+## Common Issues
+
+### Controller Not Detected
+
+```bash
+# Check USB/Bluetooth connection
+lsusb  # Should show controller
+
+# Check for input device
+ls -l /dev/input/js*
+
+# If permission denied
+sudo chmod a+rw /dev/input/js0
+```
+
+### Bluetooth Pairing Issues
+
+```bash
+# Restart Bluetooth
+sudo systemctl restart bluetooth
+
+# Check status
+sudo systemctl status bluetooth
+
+# For Xbox One, ensure disable_ertm is set
+cat /sys/module/bluetooth/parameters/disable_ertm
+```
+
+### Wrong Button Mappings
+
+- Different controller revisions may have different mappings
+- Use `jstest` or `donkey createjs` to identify correct mappings
+- Create custom controller class if needed
+
+## Next Steps
+
+- [Actuators](/parts/actuators) - Control motors with your input
+- [Data Stores](/parts/data-stores) - Record driving data
+- [Custom Parts](/parts/custom-parts) - Create custom controller logic

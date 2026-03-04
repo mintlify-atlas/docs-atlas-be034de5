@@ -1,0 +1,617 @@
+---
+title: Installation Guide
+description: Detailed installation instructions for Donkeycar on Raspberry Pi, Jetson Nano, PC, and Mac
+---
+
+This guide provides detailed installation instructions for Donkeycar on different platforms.
+
+<Note>
+Donkeycar requires **Python 3.11**. Ensure you have the correct Python version before proceeding.
+</Note>
+
+## System Requirements
+
+### Python Version
+
+Donkeycar requires Python 3.11.0 or greater (but less than 3.12):
+
+```bash
+python --version
+# Should output: Python 3.11.x
+```
+
+<Warning>
+Donkeycar will not work with Python 3.10 or earlier, or Python 3.12 or later. You must use Python 3.11.x.
+</Warning>
+
+### Hardware Requirements
+
+<Tabs>
+  <Tab title="Raspberry Pi">
+    - Raspberry Pi 4 or 5 (recommended: 4GB+ RAM)
+    - Raspberry Pi OS (64-bit recommended)
+    - MicroSD card (32GB+ recommended)
+    - Camera (Pi Camera Module or USB webcam)
+  </Tab>
+  <Tab title="Jetson Nano">
+    - NVIDIA Jetson Nano or Jetson Nano 2GB
+    - JetPack 4.6 or later
+    - MicroSD card (64GB+ recommended)
+    - Camera (CSI or USB)
+  </Tab>
+  <Tab title="PC/Mac">
+    - Modern CPU (Intel/AMD/Apple Silicon)
+    - 8GB+ RAM recommended
+    - GPU optional (for faster training)
+    - Webcam (for testing)
+  </Tab>
+</Tabs>
+
+## Installation by Platform
+
+### Raspberry Pi
+
+<Steps>
+
+#### Install System Dependencies
+
+Update your system and install required packages:
+
+```bash
+sudo apt-get update
+sudo apt-get upgrade -y
+sudo apt-get install -y python3-dev python3-pip python3-venv
+sudo apt-get install -y libhdf5-dev libatlas-base-dev libjasper-dev
+sudo apt-get install -y libqtgui4 libqt4-test git
+```
+
+#### Create Virtual Environment
+
+It's recommended to use a virtual environment:
+
+```bash
+python3 -m venv ~/donkey
+source ~/donkey/bin/activate
+```
+
+<Tip>
+Add `source ~/donkey/bin/activate` to your `~/.bashrc` to automatically activate the environment on login.
+</Tip>
+
+#### Install Donkeycar with Raspberry Pi Dependencies
+
+```bash
+pip install --upgrade pip
+pip install donkeycar[pi]
+```
+
+This installs Donkeycar along with Raspberry Pi-specific dependencies:
+
+- **picamera2** - Raspberry Pi Camera interface
+- **Adafruit_PCA9685** - I2C PWM controller
+- **adafruit-circuitpython-ssd1306** - OLED display support
+- **adafruit-circuitpython-rplidar** - Lidar support
+- **RPi.GPIO** - GPIO pin control
+- **tflite-runtime** - TensorFlow Lite for inference
+- **opencv-contrib-python** - Computer vision
+- **matplotlib** - Plotting and visualization
+- **kivy** - UI framework
+- **albumentations** - Image augmentation
+
+<Note>
+The `[pi]` extra automatically installs all dependencies needed for Raspberry Pi, including camera support and TensorFlow Lite.
+</Note>
+
+#### Enable Camera
+
+For Raspberry Pi Camera Module:
+
+```bash
+sudo raspi-config
+```
+
+Navigate to: **Interface Options → Camera → Enable**
+
+Reboot after enabling:
+
+```bash
+sudo reboot
+```
+
+#### Test Camera
+
+Test the Raspberry Pi Camera:
+
+```bash
+libcamera-hello --list-cameras
+```
+
+Or take a test photo:
+
+```bash
+libcamera-still -o test.jpg
+```
+
+#### Verify Installation
+
+```bash
+donkey --help
+```
+
+You should see the Donkey Car welcome message and available commands.
+
+</Steps>
+
+### Jetson Nano
+
+<Steps>
+
+#### Prerequisites
+
+Ensure you have JetPack installed (includes CUDA and cuDNN):
+
+```bash
+sudo apt-get update
+sudo apt-get upgrade -y
+```
+
+#### Create Virtual Environment
+
+```bash
+python3 -m venv ~/donkey
+source ~/donkey/bin/activate
+```
+
+#### Install Donkeycar with Jetson Nano Dependencies
+
+```bash
+pip install --upgrade pip
+pip install donkeycar[nano]
+```
+
+Jetson Nano-specific dependencies include:
+
+- **Adafruit_PCA9685** - I2C PWM controller
+- **adafruit-circuitpython-ssd1306** - OLED display
+- **adafruit-circuitpython-rplidar** - Lidar support
+- **Jetson.GPIO** - GPIO control for Jetson
+- **numpy==1.23.*** - Compatible NumPy version
+- **matplotlib==3.7.*** - Visualization
+- **pandas==2.0.*** - Data processing
+- **kivy** - UI framework
+- **plotly** - Interactive plots
+
+<Note>
+The `[nano]` extra uses specific versions of NumPy, Matplotlib, and Pandas that are compatible with the Jetson Nano's ARM architecture and CUDA libraries.
+</Note>
+
+#### Install TensorFlow for Jetson
+
+For GPU-accelerated training on Jetson Nano:
+
+```bash
+# Install TensorFlow for Jetson (provided by NVIDIA)
+sudo pip3 install --extra-index-url https://developer.download.nvidia.com/compute/redist/jp/v46 tensorflow==2.7.0+nv22.1
+```
+
+#### Verify Installation
+
+```bash
+donkey --help
+python -c "import tensorflow as tf; print(tf.__version__)"
+```
+
+</Steps>
+
+### PC (Linux/Windows WSL)
+
+<Steps>
+
+#### Install System Dependencies (Linux)
+
+On Ubuntu/Debian:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y python3-dev python3-pip python3-venv
+sudo apt-get install -y libhdf5-dev
+```
+
+#### Create Virtual Environment
+
+```bash
+python3 -m venv ~/donkey
+source ~/donkey/bin/activate
+```
+
+For Windows WSL, the same commands work in your WSL terminal.
+
+#### Install Donkeycar with PC Dependencies
+
+```bash
+pip install --upgrade pip
+pip install donkeycar[pc]
+```
+
+PC-specific dependencies include:
+
+- **tensorflow==2.15.*** - Full TensorFlow with training support
+- **matplotlib** - Plotting
+- **kivy** - UI framework
+- **kivy-garden.matplotlib** - Matplotlib integration for Kivy
+- **pandas** - Data processing
+- **plotly** - Interactive visualizations
+- **albumentations** - Image augmentation for training
+
+<Tip>
+The PC installation includes full TensorFlow for training models, unlike the Pi installation which uses TensorFlow Lite for inference only.
+</Tip>
+
+#### Optional: Install with PyTorch Support
+
+For PyTorch-based models:
+
+```bash
+pip install donkeycar[pc,torch]
+```
+
+This adds:
+- **torch==2.1.*** - PyTorch framework
+- **pytorch-lightning** - PyTorch training framework
+- **torchvision** - Computer vision for PyTorch
+- **torchaudio** - Audio processing
+- **fastai** - Fast.ai deep learning library
+
+#### Verify Installation
+
+```bash
+donkey --help
+python -c "import tensorflow as tf; print(tf.__version__)"
+```
+
+</Steps>
+
+### macOS
+
+<Steps>
+
+#### Install Python 3.11
+
+Using Homebrew:
+
+```bash
+brew install python@3.11
+```
+
+Verify:
+
+```bash
+python3.11 --version
+```
+
+#### Create Virtual Environment
+
+```bash
+python3.11 -m venv ~/donkey
+source ~/donkey/bin/activate
+```
+
+#### Install Donkeycar with macOS Dependencies
+
+For Apple Silicon Macs (M1/M2/M3) with GPU acceleration:
+
+```bash
+pip install --upgrade pip
+pip install donkeycar[macos]
+```
+
+For Intel Macs:
+
+```bash
+pip install donkeycar[pc]
+```
+
+macOS-specific dependencies include:
+
+- **tensorflow==2.15.*** - TensorFlow
+- **tensorflow-metal** - GPU acceleration for Apple Silicon
+- **matplotlib** - Plotting
+- **kivy** - UI framework
+- **pandas** - Data processing
+- **plotly** - Visualization
+- **albumentations** - Image augmentation
+
+<Note>
+The `[macos]` extra includes `tensorflow-metal` for GPU acceleration on Apple Silicon Macs. This can significantly speed up training.
+</Note>
+
+#### Optional: PyTorch for macOS
+
+```bash
+pip install donkeycar[macos,torch]
+```
+
+#### Verify Installation
+
+```bash
+donkey --help
+python -c "import tensorflow as tf; print(tf.__version__)"
+```
+
+</Steps>
+
+## Core Dependencies
+
+All Donkeycar installations include these core dependencies:
+
+```python
+# Core dependencies (installed with all platforms)
+numpy                  # Numerical computing
+pillow                 # Image processing
+docopt                 # Command-line interface
+tornado                # Web server
+requests               # HTTP library
+PrettyTable            # Terminal tables
+paho-mqtt              # MQTT telemetry
+simple_pid             # PID controller
+progress               # Progress bars
+pyfiglet               # ASCII art
+psutil                 # System utilities
+pynmea2                # GPS NMEA parsing
+pyserial               # Serial communication
+utm                    # GPS coordinate conversion
+pandas                 # Data analysis
+pyyaml                 # YAML configuration
+```
+
+## Installation Extras
+
+Donkeycar uses setuptools extras to provide platform-specific dependencies. You can combine multiple extras:
+
+<CodeGroup>
+```bash title="Raspberry Pi"
+pip install donkeycar[pi]
+```
+
+```bash title="Jetson Nano"
+pip install donkeycar[nano]
+```
+
+```bash title="PC with PyTorch"
+pip install donkeycar[pc,torch]
+```
+
+```bash title="macOS with PyTorch"
+pip install donkeycar[macos,torch]
+```
+
+```bash title="Development with Tests"
+pip install donkeycar[dev]
+```
+</CodeGroup>
+
+### Available Extras
+
+- **pi** - Raspberry Pi dependencies (camera, GPIO, TFLite)
+- **nano** - Jetson Nano dependencies (Jetson GPIO, compatible library versions)
+- **pc** - PC dependencies (full TensorFlow, training tools)
+- **macos** - macOS dependencies (TensorFlow with Metal GPU support)
+- **torch** - PyTorch and related libraries
+- **dev** - Development dependencies (pytest, mypy, testing tools)
+
+## Post-Installation Steps
+
+<Steps>
+
+### Test the Installation
+
+Verify all components are working:
+
+```bash
+# Check Donkeycar version
+python -c "import donkeycar; print(donkeycar.__version__)"
+
+# Test TensorFlow (if installed)
+python -c "import tensorflow as tf; print(tf.__version__)"
+
+# Test PyTorch (if installed)
+python -c "import torch; print(torch.__version__)"
+```
+
+### Find Your Car (Raspberry Pi/Jetson)
+
+From your host computer, find your car's IP address:
+
+```bash
+donkey findcar
+```
+
+Or on the car itself:
+
+```bash
+hostname -I
+```
+
+### Enable SSH (Raspberry Pi)
+
+For remote access:
+
+```bash
+sudo raspi-config
+```
+
+Navigate to: **Interface Options → SSH → Enable**
+
+### Configure WiFi
+
+Ensure your car has a stable WiFi connection. Edit the WiFi configuration:
+
+```bash
+sudo nano /etc/wpa_supplicant/wpa_supplicant.conf
+```
+
+Add your network:
+
+```
+network={
+    ssid="YourNetworkName"
+    psk="YourPassword"
+}
+```
+
+</Steps>
+
+## Upgrading Donkeycar
+
+To upgrade to the latest version:
+
+```bash
+pip install --upgrade donkeycar
+```
+
+To upgrade with platform-specific dependencies:
+
+<CodeGroup>
+```bash title="Raspberry Pi"
+pip install --upgrade donkeycar[pi]
+```
+
+```bash title="Jetson Nano"
+pip install --upgrade donkeycar[nano]
+```
+
+```bash title="PC/Mac"
+pip install --upgrade donkeycar[pc]
+```
+</CodeGroup>
+
+## Installing from Source
+
+For development or to use the latest unreleased features:
+
+```bash
+# Clone the repository
+git clone https://github.com/autorope/donkeycar.git
+cd donkeycar
+
+# Install in editable mode
+pip install -e .[pi]  # or [nano], [pc], etc.
+```
+
+<Tip>
+Installing from source allows you to modify the Donkeycar code and see changes immediately without reinstalling.
+</Tip>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Python version mismatch">
+    Donkeycar requires Python 3.11.x. Check your version:
+    
+    ```bash
+    python --version
+    ```
+    
+    If you have multiple Python versions, use:
+    
+    ```bash
+    python3.11 -m venv ~/donkey
+    ```
+  </Accordion>
+
+  <Accordion title="TensorFlow import error on Raspberry Pi">
+    If you get TensorFlow errors on Raspberry Pi, ensure you installed the `[pi]` extras:
+    
+    ```bash
+    pip uninstall tensorflow tensorflow-lite
+    pip install donkeycar[pi]
+    ```
+    
+    The Pi uses TensorFlow Lite, not full TensorFlow.
+  </Accordion>
+
+  <Accordion title="Camera not detected (Raspberry Pi)">
+    For Pi Camera Module:
+    1. Check physical connection
+    2. Enable camera in `raspi-config`
+    3. Test with `libcamera-hello --list-cameras`
+    4. Ensure `picamera2` is installed: `pip show picamera2`
+  </Accordion>
+
+  <Accordion title="GPU not detected (macOS)">
+    For Apple Silicon Macs:
+    1. Ensure you installed with `[macos]` extra
+    2. Verify tensorflow-metal is installed: `pip show tensorflow-metal`
+    3. Test GPU:
+    
+    ```python
+    import tensorflow as tf
+    print("GPU Available:", len(tf.config.list_physical_devices('GPU')) > 0)
+    ```
+  </Accordion>
+
+  <Accordion title="Memory errors during installation">
+    If installation fails with memory errors (common on Raspberry Pi):
+    
+    ```bash
+    # Increase swap space temporarily
+    sudo dphys-swapfile swapoff
+    sudo nano /etc/dphys-swapfile
+    # Change CONF_SWAPSIZE to 2048
+    sudo dphys-swapfile setup
+    sudo dphys-swapfile swapon
+    
+    # Retry installation
+    pip install donkeycar[pi]
+    ```
+  </Accordion>
+
+  <Accordion title="ImportError: No module named 'donkeycar'">
+    This usually means:
+    1. Virtual environment is not activated
+    2. Installed in one Python, running in another
+    
+    Solution:
+    ```bash
+    # Activate virtual environment
+    source ~/donkey/bin/activate
+    
+    # Verify installation
+    pip list | grep donkey
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Create your first car application
+  </Card>
+  <Card title="Configuration" icon="gear">
+    Configure your car for your specific hardware
+  </Card>
+  <Card title="Calibration" icon="sliders">
+    Calibrate steering and throttle
+  </Card>
+  <Card title="Community" icon="discord">
+    Join the Discord for help and discussions
+  </Card>
+</CardGroup>
+
+## Getting Help
+
+If you encounter issues:
+
+- Check the [official documentation](http://docs.donkeycar.com)
+- Search [GitHub issues](https://github.com/autorope/donkeycar/issues)
+- Ask on [Discord](https://discord.gg/PN6kFeA) in the #installation-help channel
+- Review platform-specific guides in the docs
+
+<Note>
+When asking for help, include:
+- Your platform (Pi 4, Jetson Nano, etc.)
+- Python version (`python --version`)
+- Donkeycar version (`pip show donkeycar`)
+- Full error message
+</Note>

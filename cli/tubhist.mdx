@@ -1,0 +1,369 @@
+---
+title: donkey tubhist
+description: Generate histograms to visualize the distribution of data in tubs
+---
+
+The `donkey tubhist` command creates histograms showing the distribution of recorded values (steering, throttle, etc.) in your tub data. This helps identify data imbalances, outliers, and overall data quality.
+
+## Usage
+
+```bash
+donkey tubhist [options]
+```
+
+## Options
+
+<ParamField path="--tub" type="string[]" required>
+  Path(s) to tub directories to analyze. Multiple tubs can be specified:
+  ```bash
+  --tub ./data/tub_1 ./data/tub_2
+  ```
+  
+  When multiple tubs are provided, their data is combined for the histogram.
+</ParamField>
+
+<ParamField path="--record" type="string">
+  Name of specific record field to create histogram for. Examples:
+  - `user/angle`: Steering angles
+  - `user/throttle`: Throttle values
+  - `user/mode`: Operating modes
+  
+  If not specified, creates histograms for all numeric fields.
+</ParamField>
+
+<ParamField path="--out" type="string">
+  Path where to save the histogram image (must end with `.png`). 
+  
+  If not specified, saves to a default location based on the tub name:
+  - With `--record`: `<tub_name>_hist_<record_name>.png`
+  - Without `--record`: `<tub_name>_hist.png`
+</ParamField>
+
+## What Gets Created
+
+The command generates:
+
+1. **Interactive histogram window** showing the distribution(s)
+2. **PNG image file** saved to the specified or default location
+
+## Histogram Features
+
+- **50 bins** by default for granular distribution view
+- **Separate subplots** for each field when analyzing all records
+- **Combined data** when multiple tubs are specified
+- **Automatic scaling** for different value ranges
+
+## Examples
+
+### Analyze all fields in a tub
+
+```bash
+donkey tubhist --tub ./data/tub_1_20-03-15
+```
+
+Creates histograms for all numeric fields (steering, throttle, etc.).
+
+### Analyze specific field (steering)
+
+```bash
+donkey tubhist --tub ./data/tub_1_20-03-15 --record user/angle
+```
+
+Shows only the distribution of steering angles.
+
+### Analyze specific field (throttle)
+
+```bash
+donkey tubhist --tub ./data/tub_1_20-03-15 --record user/throttle
+```
+
+### Save to custom location
+
+```bash
+donkey tubhist --tub ./data/tub_1_20-03-15 --record user/angle \
+  --out ~/analysis/steering_distribution.png
+```
+
+### Analyze multiple tubs combined
+
+```bash
+donkey tubhist --tub ./data/tub_1 ./data/tub_2 ./data/tub_3 \
+  --record user/angle
+```
+
+Combines data from all three tubs into a single histogram.
+
+### Analyze mode distribution
+
+```bash
+donkey tubhist --tub ./data/tub_1_20-03-15 --record user/mode
+```
+
+Shows distribution of operating modes (user, local_angle, local).
+
+## Output Example
+
+```
+Loading tubs from paths: ./data/tub_1_20-03-15
+Tub 1: 2,487 records
+
+Creating histogram for: user/angle
+Bins: 50
+Range: -1.0 to 1.0
+
+Saving image to: tub_1_20-03-15_hist_user_angle.png
+```
+
+The histogram window displays and the image is saved.
+
+## Interpreting Histograms
+
+### Steering (user/angle) Histogram
+
+#### Ideal Distribution
+- **Balanced**: Roughly equal left and right turns
+- **Centered peak**: Most values near 0 (straight driving)
+- **Smooth tails**: Gradual decrease toward extremes
+- **Full range**: Values span from -1.0 to 1.0
+
+#### Problem Patterns
+
+**Left/Right Bias**
+- More values on one side than the other
+- Indicates track turns more in one direction
+- Solution: Record data driving in reverse direction
+
+**Center Spike**
+- Overwhelming number of straight driving samples
+- Model may not learn turns well
+- Solution: Include more turns in training data
+
+**Missing Center**
+- Few straight driving samples
+- Model may struggle with straight sections
+- Solution: Record more straight driving
+
+**Gaps or Discontinuities**
+- Missing ranges of steering values
+- Model won't learn those steering angles
+- Solution: Drive with full range of steering inputs
+
+**Extreme Clusters**
+- Many samples at maximum left/right
+- May indicate overcorrection or calibration issues
+- Solution: Review driving technique or recalibrate
+
+### Throttle (user/throttle) Histogram
+
+#### Ideal Distribution
+- **Consistent forward values**: Peak around cruise throttle
+- **Few stopped values**: Minimal time at 0 throttle
+- **Minimal reverse**: Unless intentionally training for reverse
+
+#### Problem Patterns
+
+**Zero Spike**
+- Many samples with 0 throttle
+- Model may learn to stop frequently
+- Solution: Remove stopped segments or balance data
+
+**High Variance**
+- Values scattered across range
+- Inconsistent speed
+- Solution: Drive more smoothly at consistent speed
+
+**Low Values Only**
+- All throttle values are low
+- Model may be too cautious
+- Solution: Include faster driving data
+
+**Reverse Values**
+- Unexpected negative throttle
+- May be unintentional backup
+- Solution: Review and clean data
+
+## Use Cases
+
+### Data Quality Check
+
+Before training, verify data distribution:
+```bash
+donkey tubhist --tub ./data/tub_new --record user/angle
+```
+
+### Identify Data Imbalance
+
+Check if you need to collect more data for specific scenarios:
+```bash
+donkey tubhist --tub ./data/all_training_data --record user/angle
+```
+
+### Compare Datasets
+
+Analyze different tubs separately to compare:
+```bash
+donkey tubhist --tub ./data/track1 --record user/angle --out track1_steering.png
+donkey tubhist --tub ./data/track2 --record user/angle --out track2_steering.png
+```
+
+### Validate Data Collection
+
+Confirm you drove with full range of inputs:
+```bash
+donkey tubhist --tub ./data/latest_session
+```
+
+### Debug Training Issues
+
+If model performs poorly, check data distribution:
+```bash
+donkey tubhist --tub ./data/training_set --record user/angle
+donkey tubhist --tub ./data/training_set --record user/throttle
+```
+
+## Data Balancing Strategies
+
+### For Imbalanced Steering
+
+1. **Record reverse direction**: Drive the track backward
+2. **Augmentation**: Use horizontal flip in training config
+3. **Weighted sampling**: Configure training to oversample underrepresented angles
+
+```python
+# In myconfig.py
+AUG_FLIP_HORIZONTAL = True  # Helps balance left/right
+```
+
+### For Sparse Data Regions
+
+1. **Targeted collection**: Record specific scenarios (sharp turns, etc.)
+2. **Multiple laps**: Record more data of the same track
+3. **Data synthesis**: Use augmentation techniques
+
+### For Too Much Straight Driving
+
+1. **Remove straight sections**: Edit tubs to remove excess straight driving
+2. **Focus on turns**: Record more laps focusing on technical sections
+3. **Use subset**: Train only on data with abs(angle) > 0.1
+
+## Analysis Workflow
+
+1. **Collect initial data**:
+   ```bash
+   python manage.py drive
+   ```
+
+2. **Check distribution**:
+   ```bash
+   donkey tubhist --tub ./data/tub_1
+   ```
+
+3. **Identify issues**:
+   - Note imbalances
+   - Check for missing ranges
+   - Verify full steering range used
+
+4. **Collect targeted data**:
+   - Record specific scenarios that are underrepresented
+   - Drive track in reverse if left/right imbalanced
+
+5. **Verify improvement**:
+   ```bash
+   donkey tubhist --tub ./data/tub_1 ./data/tub_2
+   ```
+
+6. **Proceed to training**:
+   ```bash
+   donkey train --tub ./data/tub_1 ./data/tub_2
+   ```
+
+## Combining with Other Tools
+
+### Full Analysis Pipeline
+
+```bash
+# 1. Check data distribution
+donkey tubhist --tub ./data/tub_1 --record user/angle
+
+# 2. Train model
+donkey train --tub ./data/tub_1 --model ./models/pilot.h5
+
+# 3. Check prediction quality
+donkey tubplot --tub ./data/validation --model ./models/pilot.h5
+
+# 4. Create visualization video
+donkey makemovie --tub ./data/validation --model ./models/pilot.h5
+```
+
+## Troubleshooting
+
+### Tub not found
+- Verify tub path exists and is correct
+- Check that tub contains valid data (manifest.json)
+- Use absolute paths if relative paths fail
+
+### Empty or missing fields
+- Verify record name is correct (use `user/angle`, not just `angle`)
+- Check tub actually contains the specified field
+- Look at a tub's manifest.json to see available fields
+
+### Plot display issues
+- On headless servers, may need to set matplotlib backend
+- Use SSH with X11 forwarding: `ssh -X`
+- Check that `$DISPLAY` environment variable is set
+
+### Image not saving
+- Verify output directory exists and is writable
+- Check disk space
+- Ensure path ends with `.png`
+
+### AttributeError or DataFrame errors
+- Update pandas: `pip install --upgrade pandas`
+- Update matplotlib: `pip install --upgrade matplotlib`
+- Verify tub format is compatible (v2 format)
+
+## Common Record Fields
+
+Typical fields in Donkeycar tubs:
+
+| Field Name | Description | Typical Range |
+|------------|-------------|---------------|
+| `user/angle` | Steering angle | -1.0 to 1.0 |
+| `user/throttle` | Throttle value | -1.0 to 1.0 |
+| `user/mode` | Operating mode | 'user', 'local_angle', 'local' |
+| `pilot/angle` | Autopilot steering | -1.0 to 1.0 |
+| `pilot/throttle` | Autopilot throttle | -1.0 to 1.0 |
+| `milliseconds` | Timestamp | Integer |
+
+To see all available fields in a tub, look at its `manifest.json` file.
+
+## Tips
+
+### Before Training
+1. **Always check histograms** before training to avoid wasting time on bad data
+2. **Look at both steering and throttle** distributions
+3. **Verify full range** of values is present
+4. **Check for outliers** that might indicate recording errors
+
+### Data Collection Strategy
+1. **Plan coverage**: Aim for balanced distribution
+2. **Record multiple sessions**: Combine data from different times/conditions
+3. **Monitor during collection**: Check histograms after each session
+4. **Quality over quantity**: 1000 good balanced samples beats 10000 imbalanced ones
+
+### Iterative Improvement
+1. **Baseline histogram**: Record initial data distribution
+2. **Identify gaps**: Note underrepresented values
+3. **Targeted collection**: Focus on missing ranges
+4. **Verify improvement**: Re-run histogram
+5. **Train and evaluate**: See if balanced data improves model
+
+## Next Steps
+
+After analyzing histograms:
+
+1. **Balance your data**: Collect more data for underrepresented scenarios
+2. **Clean your data**: Remove or trim problematic sections
+3. **Train your model**: Use [`donkey train`](/cli/train)
+4. **Evaluate predictions**: Use [`donkey tubplot`](/cli/tubplot)
+5. **Visualize results**: Use [`donkey makemovie`](/cli/makemovie)

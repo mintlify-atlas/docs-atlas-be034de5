@@ -1,0 +1,484 @@
+---
+title: Lidar Parts API
+description: Lidar sensor integration for obstacle detection and mapping
+---
+
+Lidar parts provide 2D laser scanning for obstacle detection, distance measurement, and SLAM mapping.
+
+## Lidar Drivers
+
+### RPLidar2
+
+Adafruit RPLidar driver with filtering and batch processing.
+
+**Constructor:**
+
+```python
+RPLidar2(min_angle=0.0, max_angle=360.0, min_distance=sys.float_info.min,
+         max_distance=sys.float_info.max, forward_angle=0.0,
+         angle_direction=CLOCKWISE, batch_ms=50, debug=False)
+```
+
+<ParamField path="min_angle" type="float" default="0.0">
+  Minimum angle to include (degrees, 0-360)
+</ParamField>
+
+<ParamField path="max_angle" type="float" default="360.0">
+  Maximum angle to include (degrees, 0-360)
+</ParamField>
+
+<ParamField path="min_distance" type="float" default="sys.float_info.min">
+  Minimum distance to include (millimeters)
+</ParamField>
+
+<ParamField path="max_distance" type="float" default="sys.float_info.max">
+  Maximum distance to include (millimeters)
+</ParamField>
+
+<ParamField path="forward_angle" type="float" default="0.0">
+  Angle that represents "forward" direction (degrees)
+</ParamField>
+
+<ParamField path="angle_direction" type="int" default="CLOCKWISE">
+  Direction of angle increase: CLOCKWISE (1) or COUNTER_CLOCKWISE (-1)
+</ParamField>
+
+<ParamField path="batch_ms" type="float" default="50">
+  Time in milliseconds to collect measurements in run() mode
+</ParamField>
+
+<ParamField path="debug" type="bool" default="false">
+  Enable debug logging
+</ParamField>
+
+**Methods:**
+
+<ParamField path="run" type="() -> list">
+  Collect measurements for batch_ms duration and return list of (distance, angle, time, scan, index) tuples
+</ParamField>
+
+<ParamField path="run_threaded" type="() -> list">
+  Return most recent measurements from background thread
+</ParamField>
+
+<ParamField path="update" type="() -> None">
+  Continuously poll lidar in background thread
+</ParamField>
+
+<ParamField path="shutdown" type="() -> None">
+  Stop lidar and release resources
+</ParamField>
+
+**Measurement Format:**
+
+Each measurement is a tuple:
+```python
+(distance, angle, timestamp, scan_number, index_in_scan)
+```
+
+- `distance`: Distance in millimeters (float)
+- `angle`: Angle in degrees (float), adjusted for forward_angle
+- `timestamp`: Time in seconds (float)
+- `scan_number`: Full scan sequence number (int)
+- `index_in_scan`: Index within current scan (int)
+
+**Performance:**
+- Scan rate: ~7 scans/second
+- Measurement rate: ~1850 measurements/second
+
+**Installation:**
+
+```bash
+pip install Adafruit_CircuitPython_RPLIDAR
+```
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.lidar import RPLidar2, COUNTER_CLOCKWISE
+
+lidar = RPLidar2(
+    min_angle=0,
+    max_angle=180,  # Front 180 degrees only
+    max_distance=4000,  # 4 meters max
+    forward_angle=0,
+    angle_direction=COUNTER_CLOCKWISE,
+    batch_ms=100
+)
+
+# Threaded mode
+V.add(lidar, outputs=['lidar/measurements'], threaded=True)
+```
+
+### RPLidar (Legacy)
+
+Simpler RPLidar interface (deprecated, use RPLidar2).
+
+**Constructor:**
+
+```python
+RPLidar(lower_limit=0, upper_limit=360, debug=False)
+```
+
+<ParamField path="lower_limit" type="float" default="0">
+  Lower angle limit (degrees)
+</ParamField>
+
+<ParamField path="upper_limit" type="float" default="360">
+  Upper angle limit (degrees)
+</ParamField>
+
+**Methods:**
+
+<ParamField path="run_threaded" type="() -> np.ndarray">
+  Returns sorted distances as NumPy array
+</ParamField>
+
+### YDLidar
+
+YDLidar X4 driver.
+
+**Constructor:**
+
+```python
+YDLidar(port='/dev/ttyUSB0')
+```
+
+<ParamField path="port" type="str" default="/dev/ttyUSB0">
+  Serial port for lidar
+</ParamField>
+
+**Installation:**
+
+```bash
+pip install PyLidar3
+```
+
+**Methods:**
+
+<ParamField path="run_threaded" type="() -> (distances, angles)">
+  Returns tuple of (distance_list, angle_list)
+</ParamField>
+
+## Visualization
+
+### LidarPlot2
+
+Plots lidar measurements as a polar plot image.
+
+**Constructor:**
+
+```python
+LidarPlot2(resolution=(500,500), plot_type=PLOT_TYPE_CIRCLE, mark_px=3,
+           max_dist=4000, angle_direction=COUNTER_CLOCKWISE, rotate_plot=0,
+           background_color=(224, 224, 224), border_color=(128, 128, 128),
+           point_color=(255, 64, 64))
+```
+
+<ParamField path="resolution" type="tuple" default="(500, 500)">
+  Output image size in pixels (width, height)
+</ParamField>
+
+<ParamField path="plot_type" type="int" default="PLOT_TYPE_CIRCLE">
+  PLOT_TYPE_CIRCLE or PLOT_TYPE_LINE
+</ParamField>
+
+<ParamField path="mark_px" type="int" default="3">
+  Size of measurement marks in pixels
+</ParamField>
+
+<ParamField path="max_dist" type="float" default="4000">
+  Maximum distance to plot (millimeters)
+</ParamField>
+
+<ParamField path="angle_direction" type="int" default="COUNTER_CLOCKWISE">
+  Direction of increasing angles
+</ParamField>
+
+<ParamField path="rotate_plot" type="float" default="0">
+  Angle to rotate plot (degrees)
+</ParamField>
+
+<ParamField path="background_color" type="tuple" default="(224, 224, 224)">
+  RGB background color
+</ParamField>
+
+<ParamField path="border_color" type="tuple" default="(128, 128, 128)">
+  RGB border color
+</ParamField>
+
+<ParamField path="point_color" type="tuple" default="(255, 64, 64)">
+  RGB measurement point color
+</ParamField>
+
+**Methods:**
+
+<ParamField path="run" type="(measurements: list) -> PIL.Image">
+  Convert measurements to polar plot image
+</ParamField>
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.lidar import RPLidar2, LidarPlot2, COUNTER_CLOCKWISE
+
+# Create lidar
+lidar = RPLidar2(max_distance=4000)
+
+# Create plotter
+plotter = LidarPlot2(
+    resolution=(640, 480),
+    plot_type=LidarPlot2.PLOT_TYPE_CIRCLE,
+    max_dist=4000,
+    angle_direction=COUNTER_CLOCKWISE,
+    background_color=(32, 32, 32),
+    point_color=(0, 255, 0)
+)
+
+# Add to vehicle
+V.add(lidar, outputs=['lidar/measurements'], threaded=True)
+V.add(plotter, inputs=['lidar/measurements'], outputs=['lidar/plot'])
+```
+
+### LidarPlot (Legacy)
+
+Simpler plotting interface (deprecated, use LidarPlot2).
+
+**Constructor:**
+
+```python
+LidarPlot(resolution=(500,500), max_dist=1000, radius_plot=3,
+          plot_type=PLOT_TYPE_CIRC)
+```
+
+## SLAM Mapping
+
+### BreezySLAM
+
+Simple SLAM implementation for map building.
+
+**Constructor:**
+
+```python
+BreezySLAM(MAP_SIZE_PIXELS=500, MAP_SIZE_METERS=10)
+```
+
+<ParamField path="MAP_SIZE_PIXELS" type="int" default="500">
+  Map resolution in pixels
+</ParamField>
+
+<ParamField path="MAP_SIZE_METERS" type="int" default="10">
+  Map size in meters
+</ParamField>
+
+**Installation:**
+
+```bash
+pip install breezyslam
+```
+
+**Methods:**
+
+<ParamField path="run" type="(distances, angles, map_bytes) -> (x, y, theta)">
+  Update SLAM with new scan and return position estimate
+</ParamField>
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.lidar import BreezySLAM, BreezyMap, MapToImage
+
+# Create SLAM components
+map_store = BreezyMap(MAP_SIZE_PIXELS=500)
+slam = BreezySLAM(MAP_SIZE_PIXELS=500, MAP_SIZE_METERS=10)
+map_img = MapToImage(resolution=(500, 500))
+
+# Add to vehicle
+V.add(map_store, outputs=['map/bytes'])
+V.add(slam,
+      inputs=['lidar/distances', 'lidar/angles', 'map/bytes'],
+      outputs=['slam/x', 'slam/y', 'slam/theta'])
+V.add(map_img,
+      inputs=['map/bytes'],
+      outputs=['map/image'])
+```
+
+### BreezyMap
+
+Map byte storage for BreezySLAM.
+
+**Constructor:**
+
+```python
+BreezyMap(MAP_SIZE_PIXELS=500)
+```
+
+**Methods:**
+
+<ParamField path="run" type="() -> bytearray">
+  Return map bytes
+</ParamField>
+
+### MapToImage
+
+Converts SLAM map bytes to PIL image.
+
+**Constructor:**
+
+```python
+MapToImage(resolution=(500, 500))
+```
+
+**Methods:**
+
+<ParamField path="run" type="(map_bytes: bytearray) -> PIL.Image">
+  Convert map to image
+</ParamField>
+
+## Obstacle Detection
+
+### Simple Obstacle Detector
+
+```python
+import numpy as np
+
+class ObstacleDetector:
+    def __init__(self, min_angle=45, max_angle=135, threshold_distance=500):
+        """
+        Detect obstacles in front of the vehicle.
+        
+        min_angle, max_angle: angle range to check (degrees)
+        threshold_distance: obstacle distance threshold (mm)
+        """
+        self.min_angle = min_angle
+        self.max_angle = max_angle
+        self.threshold = threshold_distance
+    
+    def run(self, measurements):
+        """
+        Returns True if obstacle detected in range.
+        """
+        if not measurements:
+            return False
+        
+        for distance, angle, *_ in measurements:
+            if self.min_angle <= angle <= self.max_angle:
+                if distance < self.threshold:
+                    return True
+        return False
+
+# Add to vehicle
+obstacle = ObstacleDetector(min_angle=60, max_angle=120, threshold_distance=500)
+V.add(obstacle,
+      inputs=['lidar/measurements'],
+      outputs=['obstacle/detected'])
+```
+
+## Configuration
+
+Typical lidar configuration in `myconfig.py`:
+
+```python
+# Lidar Settings
+LIDAR_TYPE = 'rplidar'  # 'rplidar', 'ydlidar'
+LIDAR_MIN_ANGLE = 0
+LIDAR_MAX_ANGLE = 360
+LIDAR_MIN_DISTANCE = 100  # mm
+LIDAR_MAX_DISTANCE = 4000  # mm
+LIDAR_FORWARD_ANGLE = 0
+LIDAR_ANGLE_DIRECTION = -1  # COUNTER_CLOCKWISE
+
+# Visualization
+LIDAR_PLOT_RESOLUTION = (640, 480)
+LIDAR_PLOT_TYPE = 'circle'  # 'circle' or 'line'
+```
+
+## Integration Example
+
+### Complete Lidar Setup
+
+```python
+from donkeycar.parts.lidar import RPLidar2, LidarPlot2, COUNTER_CLOCKWISE
+
+# Create lidar
+lidar = RPLidar2(
+    min_angle=cfg.LIDAR_MIN_ANGLE,
+    max_angle=cfg.LIDAR_MAX_ANGLE,
+    min_distance=cfg.LIDAR_MIN_DISTANCE,
+    max_distance=cfg.LIDAR_MAX_DISTANCE,
+    forward_angle=cfg.LIDAR_FORWARD_ANGLE,
+    angle_direction=cfg.LIDAR_ANGLE_DIRECTION,
+    batch_ms=100
+)
+
+# Create plotter
+plotter = LidarPlot2(
+    resolution=cfg.LIDAR_PLOT_RESOLUTION,
+    max_dist=cfg.LIDAR_MAX_DISTANCE,
+    angle_direction=cfg.LIDAR_ANGLE_DIRECTION,
+    background_color=(32, 32, 32),
+    point_color=(0, 255, 0)
+)
+
+# Add to vehicle
+V.add(lidar, outputs=['lidar/measurements'], threaded=True)
+V.add(plotter, inputs=['lidar/measurements'], outputs=['lidar/plot'])
+
+# Record lidar data
+if cfg.RECORD_LIDAR:
+    inputs.append('lidar/measurements')
+    types.append('list')
+```
+
+## Troubleshooting
+
+### Lidar Not Found
+
+**Symptoms:** RuntimeError: "No RPLidar is connected"
+
+**Solutions:**
+1. Check USB connection: `ls /dev/ttyUSB*`
+2. Verify permissions: `sudo chmod 666 /dev/ttyUSB0`
+3. Check power supply (lidar needs 5V)
+
+### Serial Port Conflicts
+
+**Symptoms:** SerialException
+
+**Solutions:**
+1. Close other programs using the port
+2. Unplug and replug USB
+3. Reboot
+
+### Poor Quality Scans
+
+**Symptoms:** Noisy or incomplete scans
+
+**Solutions:**
+1. Clean lidar lens
+2. Avoid reflective surfaces
+3. Check motor speed (should be steady)
+4. Reduce ambient light
+
+## Performance Tips
+
+1. **Use threading**: Always run lidar in threaded mode
+2. **Filter data**: Use angle and distance filters to reduce data
+3. **Batch processing**: Adjust batch_ms for your needs
+4. **Visualization**: Reduce plot resolution for better performance
+
+## Requirements
+
+```bash
+# For RPLidar
+pip install Adafruit_CircuitPython_RPLIDAR pyserial
+
+# For YDLidar
+pip install PyLidar3
+
+# For SLAM
+pip install breezyslam
+
+# For plotting
+pip install Pillow numpy
+```

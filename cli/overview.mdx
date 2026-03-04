@@ -1,0 +1,108 @@
+---
+title: CLI Overview
+description: Introduction to the Donkeycar command-line interface
+---
+
+The Donkeycar framework provides a command-line tool called `donkey` to help you manage your autonomous vehicle projects. This CLI tool offers commands for creating new car projects, calibrating hardware, training models, and analyzing data.
+
+## Installation
+
+The `donkey` command is automatically available after installing Donkeycar:
+
+```bash
+pip install donkeycar[pc]
+```
+
+## Usage
+
+The general syntax for the `donkey` command is:
+
+```bash
+donkey <command> [options]
+```
+
+## Available Commands
+
+The Donkeycar CLI provides the following commands:
+
+| Command | Description |
+|---------|-------------|
+| `createcar` | Create a new car application with folder structure and templates |
+| `findcar` | Find your car's IP address on the network |
+| `calibrate` | Calibrate steering servo and throttle ESC |
+| `train` | Train a neural network model from recorded data |
+| `makemovie` | Create a video from recorded tub data |
+| `tubplot` | Plot model predictions against actual data |
+| `tubhist` | Generate histograms of tub data |
+| `ui` | Launch the graphical user interface |
+| `createjs` | Create joystick/controller configuration |
+| `cnnactivations` | Visualize CNN layer activations |
+| `models` | Display model database information |
+| `update` | Update car templates to latest version |
+
+## Getting Help
+
+To see the list of available commands:
+
+```bash
+donkey
+```
+
+To get help for a specific command:
+
+```bash
+donkey <command> --help
+```
+
+## Common Workflows
+
+### Setting Up a New Car
+
+1. Create a new car project:
+   ```bash
+   donkey createcar --path ~/mycar
+   ```
+
+2. Calibrate the servos:
+   ```bash
+   cd ~/mycar
+   donkey calibrate --channel 0
+   ```
+
+3. Drive and collect data, then train a model:
+   ```bash
+   donkey train --tub ./data --model ./models/pilot.h5
+   ```
+
+### Analyzing Data
+
+1. View data distribution:
+   ```bash
+   donkey tubhist --tub ./data/tub_1_20-01-01
+   ```
+
+2. Plot model predictions:
+   ```bash
+   donkey tubplot --tub ./data/tub_1_20-01-01 --model ./models/pilot.h5
+   ```
+
+3. Create a video:
+   ```bash
+   donkey makemovie --tub ./data/tub_1_20-01-01 --out drive_video.mp4
+   ```
+
+## Configuration
+
+Many commands accept a `--config` option to specify a custom configuration file:
+
+```bash
+donkey train --config ./custom_config.py --tub ./data
+```
+
+The default configuration file is `config.py` in the current directory.
+
+## Next Steps
+
+- [Create your first car](/cli/createcar)
+- [Calibrate your hardware](/cli/calibrate)
+- [Train a model](/cli/train)

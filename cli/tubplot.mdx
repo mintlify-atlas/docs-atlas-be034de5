@@ -1,0 +1,325 @@
+---
+title: donkey tubplot
+description: Plot model predictions against actual user input data
+---
+
+The `donkey tubplot` command creates plots comparing a model's predictions (steering and throttle) against the actual user inputs from recorded tub data. This is essential for evaluating model performance and identifying areas for improvement.
+
+## Usage
+
+```bash
+donkey tubplot [options]
+```
+
+## Options
+
+<ParamField path="--tub" type="string[]" required>
+  Path(s) to tub directories to analyze. Multiple tubs can be specified:
+  ```bash
+  --tub ./data/tub_1 ./data/tub_2
+  ```
+</ParamField>
+
+<ParamField path="--model" type="string" required>
+  Path to the trained model to use for predictions.
+</ParamField>
+
+<ParamField path="--limit" type="integer" default="1000">
+  Maximum number of records to process. Default is 1000 records.
+</ParamField>
+
+<ParamField path="--type" type="string">
+  Model type to load (e.g., `linear`, `categorical`). If not specified, uses `DEFAULT_MODEL_TYPE` from config.
+</ParamField>
+
+<ParamField path="--config" type="string" default="./config.py">
+  Location of config file to use. Default is `./config.py`.
+</ParamField>
+
+<ParamField path="--noshow" type="boolean" default="false">
+  Save the plot without displaying it in a window. Useful for headless environments or batch processing.
+</ParamField>
+
+## What Gets Created
+
+The command generates:
+
+1. **Interactive plot window** (unless `--noshow` is specified) with two subplots:
+   - **Steering plot**: User angle vs. pilot angle over time
+   - **Throttle plot**: User throttle vs. pilot throttle over time
+
+2. **PNG image file** saved as `<model_path>_pred.png` containing the plots
+
+## Plot Features
+
+### Steering Subplot (Top)
+- **Blue line**: User steering input (ground truth)
+- **Orange line**: Model predicted steering
+- **Y-axis**: Steering angle (-1.0 to 1.0)
+- **X-axis**: Record index
+
+### Throttle Subplot (Bottom)  
+- **Blue line**: User throttle input (ground truth)
+- **Orange line**: Model predicted throttle
+- **Y-axis**: Throttle value (-1.0 to 1.0)
+- **X-axis**: Record index
+
+### Plot Title
+Includes:
+- Tub path(s)
+- Model path
+- Model type
+
+## Examples
+
+### Basic plot with single tub
+
+```bash
+donkey tubplot --tub ./data/tub_1_20-03-15 --model ./models/pilot.h5
+```
+
+### Plot with multiple tubs
+
+```bash
+donkey tubplot --tub ./data/tub_1 ./data/tub_2 --model ./models/pilot.h5
+```
+
+### Process limited records
+
+```bash
+donkey tubplot --tub ./data/tub_1 --model ./models/pilot.h5 --limit 500
+```
+
+Analyzes only the first 500 records.
+
+### Specify model type
+
+```bash
+donkey tubplot --tub ./data/tub_1 --model ./models/pilot.h5 --type linear
+```
+
+### Save without displaying (headless mode)
+
+```bash
+donkey tubplot --tub ./data/tub_1 --model ./models/pilot.h5 --noshow
+```
+
+Useful for running on servers without display or in batch scripts.
+
+### Use custom config
+
+```bash
+donkey tubplot --tub ./data/tub_1 --model ./models/pilot.h5 \
+  --config ./custom_config.py
+```
+
+### Process all available records
+
+```bash
+donkey tubplot --tub ./data/tub_1 --model ./models/pilot.h5 --limit 999999
+```
+
+Set a very high limit to process entire tub.
+
+## Output Example
+
+While processing:
+
+```
+Loading config: ./config.py
+Loading model: ./models/pilot.h5
+Model type: linear
+
+Loading tub: ./data/tub_1_20-03-15
+Found 2,487 records (processing 1,000)
+
+Inferencing: ████████████████████ 1000/1000
+
+Saving tubplot at ./models/pilot.h5_pred.png
+```
+
+The plot window opens (unless `--noshow`) and the PNG file is saved.
+
+## Interpreting the Plots
+
+### Good Model Performance
+- **Lines closely aligned**: Predictions closely follow user inputs
+- **Smooth predictions**: Model outputs are stable, not jittery
+- **Similar patterns**: Model captures overall driving behavior
+
+### Signs of Problems
+
+#### Overfitting
+- Perfect match on training data
+- Poor match on validation data
+- Solution: Collect more diverse data, reduce model complexity
+
+#### Underfitting
+- Predictions don't follow user inputs well
+- Flat or unresponsive predictions
+- Solution: Use more complex model, train longer, improve data quality
+
+#### Lag
+- Predictions delayed compared to user input
+- Model reacts too slowly
+- Solution: Check sequence length, reduce model latency
+
+#### Oscillation
+- Predictions jitter or oscillate
+- Model output is unstable
+- Solution: Add smoothing, improve training data, adjust learning rate
+
+#### Bias
+- Predictions consistently offset from user input
+- Model steers too much left/right
+- Solution: Check calibration, balance training data
+
+## Use Cases
+
+### Model Evaluation
+
+Compare model accuracy after training:
+```bash
+donkey tubplot --tub ./data/validation_tub --model ./models/pilot.h5
+```
+
+### Model Comparison
+
+Evaluate multiple models on the same data:
+```bash
+donkey tubplot --tub ./data/test_tub --model ./models/v1.h5
+donkey tubplot --tub ./data/test_tub --model ./models/v2.h5
+donkey tubplot --tub ./data/test_tub --model ./models/v3.h5
+```
+
+Compare the resulting `*_pred.png` files.
+
+### Identifying Problem Areas
+
+Find where predictions diverge from user input:
+```bash
+donkey tubplot --tub ./data/difficult_section --model ./models/pilot.h5 --limit 200
+```
+
+### Quick Validation
+
+Rapidly check if training improved the model:
+```bash
+# Before training
+donkey tubplot --tub ./data/val --model ./models/baseline.h5 --limit 100
+
+# After training  
+donkey tubplot --tub ./data/val --model ./models/trained.h5 --limit 100
+```
+
+### Debugging
+
+Identify specific failure modes:
+```bash
+donkey tubplot --tub ./data/crash_data --model ./models/pilot.h5
+```
+
+## Analysis Workflow
+
+1. **Train your model**:
+   ```bash
+   donkey train --tub ./data/training_tubs --model ./models/pilot.h5
+   ```
+
+2. **Create plots for validation data**:
+   ```bash
+   donkey tubplot --tub ./data/validation_tub --model ./models/pilot.h5
+   ```
+
+3. **Analyze the plots**:
+   - Check steering accuracy
+   - Check throttle stability
+   - Identify systematic errors
+
+4. **Iterate**:
+   - Collect more data for problem areas
+   - Adjust model architecture or hyperparameters
+   - Retrain and replot
+
+## Advanced Analysis
+
+### Quantitative Metrics
+
+For numerical error metrics, you can calculate:
+- **Mean Absolute Error (MAE)**: Average absolute difference
+- **Root Mean Square Error (RMSE)**: Emphasizes larger errors
+- **R² Score**: How well predictions explain variance
+
+These aren't directly provided by `tubplot`, but you can compute them from the saved data or modify the source code.
+
+### Custom Plots
+
+The plot data is generated during inference. For custom analysis:
+
+1. Copy the tubplot code from `donkeycar/management/base.py`
+2. Modify the plotting section to add:
+   - Error distribution histograms
+   - Scatter plots of user vs. predicted values
+   - Time-series of prediction errors
+   - Confidence intervals
+
+## Troubleshooting
+
+### Model loading errors
+- Verify model path is correct
+- Ensure model file is not corrupted
+- Check config matches model requirements
+- Specify `--type` explicitly
+
+### Tub not found
+- Check tub path is correct
+- Verify tub contains valid data (manifest.json)
+- Use absolute paths if relative paths fail
+
+### Plot display issues (Linux)
+- May need X11 forwarding for SSH: `ssh -X`
+- Or use `--noshow` and view PNG file
+- Install matplotlib backend: `sudo apt-get install python3-tk`
+
+### Memory errors
+- Reduce `--limit` to process fewer records
+- Close other applications
+- Use a machine with more RAM
+
+### Inference too slow
+- Reduce `--limit`
+- Use GPU if available
+- Ensure TensorFlow/PyTorch is properly installed
+
+### Plot looks empty or flat
+- Check that tub contains valid user inputs
+- Verify model is actually loaded (not using random weights)
+- Ensure image normalization is correct
+
+## Tips
+
+### Efficient Evaluation
+1. **Use subset of data**: Start with `--limit 100` for quick checks
+2. **Automate comparison**: Script multiple tubplot calls for batch analysis
+3. **Save all plots**: Use `--noshow` and compare PNG files side-by-side
+
+### Representative Data
+1. **Use validation tubs**: Don't evaluate on training data
+2. **Test diverse scenarios**: Include straight, curves, different speeds
+3. **Check edge cases**: Test on challenging sections
+
+### Continuous Monitoring
+1. **Plot after each training**: Track improvement over time
+2. **Keep plot history**: Archive PNG files with timestamps
+3. **Document changes**: Note what training parameters produced each plot
+
+## Next Steps
+
+After analyzing plots:
+
+1. **Identify weaknesses**: Note where predictions are poor
+2. **Collect targeted data**: Record more examples of problem scenarios
+3. **Visualize with video**: Use [`donkey makemovie`](/cli/makemovie) for visual analysis
+4. **Check data distribution**: Use [`donkey tubhist`](/cli/tubhist) to analyze data balance
+5. **Retrain**: Incorporate findings into next training iteration
+6. **Test on car**: Deploy and test in real-world conditions

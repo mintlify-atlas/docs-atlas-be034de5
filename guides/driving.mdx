@@ -1,0 +1,615 @@
+---
+title: Driving Your Donkeycar
+description: Learn to drive your car manually, collect training data, and use different driving modes
+---
+
+## Overview
+
+Once your car is assembled and calibrated, you're ready to drive! Donkeycar provides a web interface and optional joystick control for driving your car manually and collecting training data for autonomous operation.
+
+## Starting Your Car
+
+### Basic Drive Command
+
+```bash
+cd ~/mycar
+python manage.py drive
+```
+
+You'll see output like:
+```
+PID: 12345
+You can now go to <your-hostname>.local:8887 to drive your car.
+```
+
+### With a Trained Model
+
+```bash
+# Drive with autopilot available
+python manage.py drive --model models/mypilot.h5
+
+# Specify model type
+python manage.py drive --model models/mypilot.h5 --type linear
+```
+
+### With Joystick
+
+```bash
+# Use physical joystick controller
+python manage.py drive --js
+```
+
+Or set in `myconfig.py`:
+```python
+USE_JOYSTICK_AS_DEFAULT = True
+```
+
+## Web Interface
+
+### Accessing the Interface
+
+Open your browser to:
+```
+http://<your-pi-hostname>.local:8887
+```
+
+**Examples:**
+- `http://donkeypi.local:8887`
+- `http://raspberrypi.local:8887`
+- Or use IP address: `http://192.168.1.100:8887`
+
+<Tip>
+Bookmark this URL on your phone or laptop for quick access. The web interface works great on mobile devices!
+</Tip>
+
+### Web Interface Features
+
+**Live camera feed**
+- Shows real-time view from your car's camera
+- Updates as you drive
+
+**Control sliders**
+- **Steering**: Left/right control (-1.0 to 1.0)
+- **Throttle**: Forward/reverse control (-1.0 to 1.0)
+
+**Mode selector**
+- Switch between User, Local Angle, and Local (autopilot) modes
+
+**Recording indicator**
+- Shows when data is being saved
+- Displays number of recorded frames
+
+**Status information**
+- Current steering/throttle values
+- FPS (frames per second)
+- Model information (when using autopilot)
+
+### Driving with Web Interface
+
+<Steps>
+
+### Connect to web interface
+
+Navigate to your car's URL in a browser.
+
+### Select User mode
+
+Use the mode dropdown to select **User**.
+
+### Enable recording
+
+Toggle the recording switch to **On** (or rely on auto-record if configured).
+
+### Drive the car
+
+- **Desktop**: Use sliders or keyboard controls
+- **Mobile**: Touch the on-screen joystick
+- **Gamepad**: If browser supports it, use connected gamepad
+
+### Collect good data
+
+- Drive smoothly and consistently
+- Stay in the center of the track/path
+- Avoid sudden movements
+- Record 5-10 laps for good training data
+
+</Steps>
+
+### Keyboard Controls
+
+When focused on the web interface:
+
+**Steering:**
+- `A` / `Left Arrow`: Steer left
+- `D` / `Right Arrow`: Steer right
+
+**Throttle:**
+- `W` / `Up Arrow`: Forward
+- `S` / `Down Arrow`: Reverse/Brake
+- `Space`: Quick stop
+
+**Recording:**
+- `R`: Toggle recording
+
+**Mode:**
+- `1`: User mode
+- `2`: Local Angle mode
+- `3`: Local mode (full autopilot)
+
+## Driving Modes
+
+Donkeycar has three primary driving modes:
+
+### User Mode
+
+**What it is**: Full manual control
+
+**Who's in control**:
+- Steering: Human
+- Throttle: Human
+
+**When to use**:
+- Collecting training data
+- Testing car setup
+- Learning the track
+
+**Configuration**:
+```python
+WEB_INIT_MODE = "user"  # Default on startup
+```
+
+### Local Angle Mode
+
+**What it is**: AI steering, human throttle
+
+**Who's in control**:
+- Steering: AI/Autopilot
+- Throttle: Human
+
+**When to use**:
+- Testing steering model safely
+- Learning how the AI steers
+- Maintaining speed control during testing
+
+**Advantages**:
+- You control the speed
+- Easier to stop if AI makes mistakes
+- Good for initial autopilot testing
+
+### Local Mode (Full Autopilot)
+
+**What it is**: Full autonomous control
+
+**Who's in control**:
+- Steering: AI/Autopilot  
+- Throttle: AI/Autopilot
+
+**When to use**:
+- After successful Local Angle testing
+- Racing
+- Demonstrating autonomous driving
+
+**Safety tip**: Always be ready to switch back to User mode!
+
+### Mode Comparison
+
+| Mode | Steering | Throttle | Use Case |
+|------|----------|----------|----------|
+| **User** | Human | Human | Training data collection |
+| **Local Angle** | AI | Human | Test steering safely |
+| **Local** | AI | AI | Full autonomous driving |
+
+## Recording Training Data
+
+### Auto-Record on Throttle
+
+Most common setup - automatically records when you're moving:
+
+```python
+AUTO_RECORD_ON_THROTTLE = True
+```
+
+**How it works**:
+- Recording starts automatically when throttle > 0
+- Recording stops when throttle returns to 0  
+- Prevents recording while stationary
+
+### Manual Recording
+
+Control recording explicitly:
+
+```python
+AUTO_RECORD_ON_THROTTLE = False
+```
+
+Toggle recording:
+- Web interface: Recording switch
+- Keyboard: `R` key
+- Joystick: Assigned button
+
+### Recording During AI
+
+Record while autopilot is driving (use with caution):
+
+```python
+RECORD_DURING_AI = True
+```
+
+<Warning>
+Do not train on data recorded during AI driving! This creates circular training and degrades performance.
+</Warning>
+
+### Tub Management
+
+**Auto-create new tubs**:
+```python
+AUTO_CREATE_NEW_TUB = True  # New directory for each session
+```
+
+**Append to existing tub**:
+```python
+AUTO_CREATE_NEW_TUB = False  # Add to existing data/
+```
+
+**Tub locations**:
+```
+data/
+├── tub_1_21-03-15/  # First session
+├── tub_2_21-03-15/  # Second session (if AUTO_CREATE_NEW_TUB=True)
+└── tub_3_21-03-16/  # Next day's session
+```
+
+### What Gets Recorded
+
+Each frame captures:
+- Camera image (`cam/image_array`)
+- Steering angle (`user/angle`) - range: -1.0 to 1.0
+- Throttle value (`user/throttle`) - range: -1.0 to 1.0
+- Drive mode (`user/mode`) - "user", "local_angle", "local"
+- Timestamp
+- Optional: IMU data, LIDAR data, speed, behaviors
+
+## Joystick Control
+
+### Supported Controllers
+
+Donkeycar supports many game controllers:
+
+- PlayStation 3 (PS3)
+- PlayStation 4 (PS4)  
+- Xbox One/360
+- Nintendo Switch Pro
+- Logitech F710
+- Custom controllers (via `donkey createjs`)
+
+### Enabling Joystick
+
+```python
+USE_JOYSTICK_AS_DEFAULT = True
+CONTROLLER_TYPE = 'xbox'  # or 'ps4', 'ps3', etc.
+JOYSTICK_DEVICE_FILE = "/dev/input/js0"
+```
+
+### Xbox Controller Mapping
+
+**Driving:**
+- **Left Stick**: Steering
+- **Right Trigger**: Forward throttle
+- **Left Trigger**: Reverse throttle
+
+**Modes:**
+- **A button**: User mode
+- **B button**: Local Angle mode  
+- **X button**: Local (autopilot) mode
+
+**Recording:**
+- **Y button**: Toggle recording
+- **RB (Right Bumper)**: Increase max throttle
+- **LB (Left Bumper)**: Decrease max throttle
+
+### PS4 Controller Mapping
+
+**Driving:**
+- **Left Stick**: Steering  
+- **R2**: Forward throttle
+- **L2**: Reverse throttle
+
+**Modes:**
+- **Cross (X)**: User mode
+- **Circle**: Local Angle mode
+- **Square**: Local mode  
+
+**Recording:**
+- **Triangle**: Toggle recording
+- **R1**: Increase max throttle
+- **L1**: Decrease max throttle
+
+### Joystick Configuration
+
+```python
+# Throttle settings
+JOYSTICK_MAX_THROTTLE = 0.5  # Limit to 50% for safety
+JOYSTICK_THROTTLE_DIR = -1.0  # Flip direction if needed
+
+# Steering settings  
+JOYSTICK_STEERING_SCALE = 1.0  # Adjust sensitivity
+JOYSTICK_DEADZONE = 0.01  # Ignore small movements
+```
+
+## Driving Tips for Good Training Data
+
+### Track/Environment
+
+- **Consistent lighting**: Avoid shadows and changing light
+- **Clear boundaries**: Well-defined edges (tape, walls, etc.)
+- **Simple at first**: Start with straight paths, add complexity later
+- **Repeatable**: Same track for all training laps
+
+### Driving Technique
+
+**Smooth inputs**:
+- Avoid jerky steering corrections
+- Gradual throttle changes
+- Consistent speed throughout track
+
+**Center of lane**:
+- Stay in middle of track/path
+- Consistent positioning
+- Recovery when needed
+
+**Multiple laps**:
+- 5-10 laps minimum
+- Both directions if possible
+- Variety of speeds (if training for different speeds)
+
+### Data Quality
+
+**Good training data**:
+- Smooth, centered driving
+- Consistent speed
+- Clear, well-lit images
+- 1000-3000 frames minimum
+
+**Bad training data** (avoid):
+- Erratic steering
+- Off-track excursions
+- Stopped/stationary frames
+- Blurry or dark images
+
+<Tip>
+Quality matters more than quantity. 1000 frames of smooth, centered driving beats 10,000 frames of erratic driving.
+</Tip>
+
+## Checking Your Data
+
+### View Recorded Images
+
+```bash
+# Install donkeycar utilities
+cd ~/mycar
+ls data/tub_1_21-03-15/images/
+```
+
+Images are numbered sequentially: `0_cam_image_array_.jpg`, `1_cam_image_array_.jpg`, etc.
+
+### Tub Statistics
+
+View tub information:
+```bash
+donkey tubhist --tub data/tub_1_21-03-15
+```
+
+Shows distribution of steering angles and throttle values.
+
+### Make a Movie
+
+Create a video from your tub:
+```bash
+donkey makemovie --tub data/tub_1_21-03-15 --out myvideo.mp4
+```
+
+Great for reviewing your driving and sharing progress!
+
+## Safety Guidelines
+
+### Before Driving
+
+- [ ] Car is properly calibrated
+- [ ] Emergency stop is accessible (switch to User mode)
+- [ ] Clear area with no obstacles
+- [ ] Battery charged
+- [ ] Camera view is clear
+
+### During Driving
+
+- [ ] Start at low throttle (30-50%)
+- [ ] Keep hand near controller for quick stop
+- [ ] Watch for unexpected behavior  
+- [ ] Stop if car acts erratically
+- [ ] Avoid driving near people or pets
+
+### Autopilot Testing
+
+- [ ] Test in large, clear area first
+- [ ] Start with Local Angle mode
+- [ ] Be ready to take over instantly
+- [ ] Gradually increase trust in AI
+- [ ] Never use untested models in competitions
+
+<Warning>
+Always be ready to take manual control. Even well-trained models can make mistakes.
+</Warning>
+
+## Throttle Control
+
+### Limiting Speed
+
+**User mode** (manual driving):
+```python
+JOYSTICK_MAX_THROTTLE = 0.5  # 50% max speed
+```
+
+**AI mode** (autopilot):
+```python
+AI_THROTTLE_MULT = 0.8  # 80% of learned throttle
+```
+
+### Launch Control
+
+Boost throttle at start of autonomous mode (useful for racing):
+
+```python
+AI_LAUNCH_DURATION = 1.0  # Boost for 1 second
+AI_LAUNCH_THROTTLE = 1.0  # Full throttle during boost  
+AI_LAUNCH_ENABLE_BUTTON = 'R2'  # Button to activate
+```
+
+## Troubleshooting
+
+### Web interface won't load
+
+**Check:**
+- Pi is powered on and booted
+- Connected to same network as Pi
+- Correct hostname or IP address
+- Port 8887 is not blocked by firewall
+
+**Try:**
+```bash
+# Find your Pi's IP
+hostname -I
+
+# Use IP instead of hostname
+http://192.168.1.100:8887
+```
+
+### Camera feed not showing
+
+**Check:**
+- Camera is connected properly (CSI or USB)
+- Camera is enabled: `sudo raspi-config` → Interface Options → Camera
+- Correct `CAMERA_TYPE` in myconfig.py
+
+**Test:**
+```bash
+# For Pi Camera
+raspistill -o test.jpg
+
+# Check camera permissions
+ls -l /dev/video*
+```
+
+### Car doesn't respond to controls
+
+**Check:**
+- Motors/servos are powered (check battery)
+- Calibration values are set in myconfig.py
+- Correct `DRIVE_TRAIN_TYPE`
+- PCA9685 is connected (if using)
+
+**Test:**
+```bash
+# Check I2C connection
+sudo i2cdetect -y 1
+
+# Should show device at 0x40
+```
+
+### Recording not working
+
+**Check:**
+- Recording toggle is enabled in web UI
+- Throttle > 0 (if AUTO_RECORD_ON_THROTTLE=True)
+- Sufficient disk space: `df -h`
+- Write permissions in data/ directory
+
+**Test:**
+```bash
+# Check data directory
+ls -la ~/mycar/data/
+
+# Manually enable recording in config
+AUTO_RECORD_ON_THROTTLE = False
+```
+
+### Steering/throttle reversed
+
+**Fix in myconfig.py:**
+```python
+# Reverse steering
+"PWM_STEERING_INVERTED": True,
+
+# Reverse throttle  
+"PWM_THROTTLE_INVERTED": True,
+```
+
+### Joystick not detected
+
+**Check connection:**
+```bash
+# List input devices
+ls /dev/input/
+
+# Should see js0 or js1
+
+# Test joystick
+jstest /dev/input/js0
+```
+
+**Fix permissions:**
+```bash
+sudo chmod a+rw /dev/input/js0
+```
+
+## Performance Tuning
+
+### Increase Frame Rate
+
+```python
+DRIVE_LOOP_HZ = 30  # Up from default 20
+CAMERA_FRAMERATE = 30  # Match camera to loop rate
+```
+
+**Trade-offs**:
+- Higher CPU usage
+- More frames for AI to process
+- Better for fast-moving cars
+
+### Reduce Latency
+
+```python
+IMAGE_W = 120  # Smaller images process faster
+IMAGE_H = 90
+```
+
+### Show Performance Info
+
+```python
+SHOW_FPS = True
+FPS_DEBUG_INTERVAL = 10  # Print FPS every 10 seconds
+```
+
+## Next Steps
+
+<Steps>
+
+### Collect quality data
+Drive 5-10 smooth laps on your track, staying centered.
+
+### Train your first model
+Use your collected data to [train an autopilot model](/training/deep-learning).
+
+### Test the autopilot
+Start with Local Angle mode, then progress to full Local mode.
+
+### Iterate and improve
+Collect more data in areas where the AI struggles, retrain.
+
+</Steps>
+
+## Additional Resources
+
+- [Training your autopilot](/training/deep-learning)
+- [Advanced driving techniques](/guides/driving)
+- [Creating custom parts](/parts/custom-parts)
+- [Donkeycar Community Discord](https://discord.gg/PN6kFeA)

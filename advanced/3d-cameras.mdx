@@ -1,0 +1,662 @@
+---
+title: "3D Depth Cameras"
+description: "Intel RealSense and OAK-D depth cameras for 3D vision and obstacle detection"
+---
+
+Depth cameras provide RGB images with corresponding depth information, enabling 3D perception for obstacle avoidance, SLAM, and advanced vision tasks. Donkeycar supports Intel RealSense D435/D435i and OAK-D cameras.
+
+## Overview
+
+3D camera capabilities:
+- **Depth perception** - Measure distance to objects
+- **RGB + Depth** - Color images aligned with depth
+- **Stereo vision** - Calculate depth from twin cameras
+- **IMU data** - Accelerometer and gyroscope (D435i only)
+- **Point clouds** - 3D reconstruction
+- **Obstacle detection** - Identify and measure obstacles
+
+## Hardware Comparison
+
+### Intel RealSense D435i
+
+**Specifications:**
+- **Depth range**: 0.3-10 meters
+- **RGB resolution**: 424x240 @ 60fps (configurable up to 1920x1080)
+- **Depth resolution**: 848x480 @ 60fps
+- **FOV**: 87° × 58° (depth), 69° × 42° (RGB)
+- **IMU**: Yes (D435i only)
+- **Interface**: USB 3.0
+- **Cost**: ~$200-250
+
+**Pros:**
+- Excellent depth accuracy
+- IMU for motion tracking
+- Well-supported SDK
+- Good documentation
+
+**Cons:**
+- Higher power consumption
+- Larger form factor
+- More expensive
+
+### OAK-D (OpenCV AI Kit)
+
+**Specifications:**
+- **Depth range**: 0.2-10 meters  
+- **RGB resolution**: 640x480 (up to 4K)
+- **Depth resolution**: 640x480
+- **FOV**: 71° × 55° (stereo)
+- **Processing**: Intel Movidius VPU onboard
+- **Interface**: USB 3.0
+- **Cost**: ~$150-200
+
+**Pros:**
+- Onboard AI processing
+- Lower host CPU usage
+- Compact design
+- Good value
+
+**Cons:**
+- More complex API
+- Less mature ecosystem
+- No IMU
+
+## Intel RealSense D435/D435i
+
+### Installation
+
+#### Install librealsense
+
+For **Jetson Nano**, build from source:
+
+```bash
+# Clone JetsonHacks repo
+git clone https://github.com/JetsonHacksNano/installLibrealsense
+cd installLibrealsense
+
+# Build and install
+./buildLibrealsense.sh
+
+# This installs librealsense with Python bindings
+```
+
+For **desktop Linux**:
+
+```bash
+# Add Intel server to apt
+sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key F6E65AC044F831AC80A06380C8B3A55A6F3EFCDE
+sudo add-apt-repository "deb https://librealsense.intel.com/Debian/apt-repo $(lsb_release -cs) main"
+
+# Install
+sudo apt-get update
+sudo apt-get install librealsense2-dkms librealsense2-utils librealsense2-dev
+
+# Install Python bindings
+pip install pyrealsense2
+```
+
+Verify installation:
+
+```bash
+realsense-viewer  # Launch GUI viewer
+```
+
+### Configuration
+
+Configure in `myconfig.py`:
+
+```python
+# Enable RealSense
+CAMERA_TYPE = "D435"  # or "REALSENSE" or "REALSENSE435I"
+
+# RealSense D435/D435i settings
+REALSENSE_D435_RGB = True        # Capture RGB image
+REALSENSE_D435_DEPTH = True      # Capture depth image
+REALSENSE_D435_IMU = False       # Capture IMU data (D435i only)
+REALSENSE_D435_ID = None         # Serial number or None for auto-detect
+
+# Output image size (will be resized from native resolution)
+IMAGE_W = 160
+IMAGE_H = 120
+IMAGE_DEPTH = 3  # 3 for RGB, 1 for grayscale
+```
+
+From `donkeycar/templates/cfg_simulator.py:271-276`.
+
+### RealSense435i Part
+
+```python
+from donkeycar.parts.realsense435i import RealSense435i
+
+# Create camera
+camera = RealSense435i(
+    width=cfg.IMAGE_W,
+    height=cfg.IMAGE_H,
+    channels=cfg.IMAGE_DEPTH,
+    enable_rgb=cfg.REALSENSE_D435_RGB,
+    enable_depth=cfg.REALSENSE_D435_DEPTH,
+    enable_imu=cfg.REALSENSE_D435_IMU,
+    device_id=cfg.REALSENSE_D435_ID
+)
+
+# Add to vehicle
+V.add(camera,
+      outputs=['cam/image_array', 'cam/depth_array',
+               'imu/accel_x', 'imu/accel_y', 'imu/accel_z',
+               'imu/gyro_x', 'imu/gyro_y', 'imu/gyro_z'],
+      threaded=True)
+```
+
+From `donkeycar/parts/realsense435i.py:33-120`.
+
+### Native Resolution
+
+The part always captures at native resolution and resizes:
+
+```python
+# Native capture resolution
+WIDTH = 424   # RGB
+HEIGHT = 240
+CHANNELS = 3
+
+# Depth captured at 848x480, then aligned to RGB
+```
+
+From `donkeycar/parts/realsense435i.py:29-31`.
+
+### Depth Alignment
+
+Depth frames are aligned to RGB:
+
+```python
+config.enable_stream(rs.stream.depth, 848, 480, rs.format.z16, 60)
+config.enable_stream(rs.stream.color, 424, 240, rs.format.rgb8, 60)
+
+# Create align object
+align_to = rs.stream.color
+self.align = rs.align(align_to)
+
+# During capture
+aligned_frames = self.align.process(frames)
+depth_frame = aligned_frames.get_depth_frame()
+color_frame = aligned_frames.get_color_frame()
+```
+
+From `donkeycar/parts/realsense435i.py:81-99`.
+
+### IMU Data (D435i only)
+
+Capture accelerometer and gyroscope:
+
+```python
+# Enable IMU
+enable_imu = True
+
+# IMU streams
+imu_config.enable_stream(rs.stream.accel, rs.format.motion_xyz32f, 63)
+imu_config.enable_stream(rs.stream.gyro, rs.format.motion_xyz32f, 200)
+
+# Outputs: accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z
+# Gyroscope: x=pitch, y=yaw, z=roll
+```
+
+From `donkeycar/parts/realsense435i.py:59-69`.
+
+### Multiple Cameras
+
+Use device serial number:
+
+```python
+# List connected cameras
+realsense-viewer  # Shows serial numbers
+
+# Specify camera
+REALSENSE_D435_ID = "923322071108"
+
+camera1 = RealSense435i(device_id="923322071108")
+camera2 = RealSense435i(device_id="923322071109")
+```
+
+### Testing
+
+Run self-test:
+
+```bash
+python -m donkeycar.parts.realsense435i \
+    --rgb \
+    --depth \
+    --imu \
+    --device_id 923322071108
+```
+
+From `donkeycar/parts/realsense435i.py:224-317`.
+
+## OAK-D (OpenCV AI Kit)
+
+### Installation
+
+Install DepthAI SDK:
+
+```bash
+# Install depthai
+pip install depthai
+
+# Install dependencies
+pip install opencv-python numpy
+```
+
+#### Linux USB Permissions
+
+```bash
+# Add udev rule
+echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="03e7", MODE="0666"' | sudo tee /etc/udev/rules.d/80-movidius.rules
+
+# Reload rules
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+From `donkeycar/parts/oak_d.py:10-13`.
+
+### Configuration
+
+```python
+# Enable OAK-D
+CAMERA_TYPE = "OAKD"  # or "OAK_D"
+
+# OAK-D settings  
+OAKD_RGB = True         # Capture RGB image
+OAKD_DEPTH = True       # Capture depth image
+OAKD_ID = None          # Serial number or None for auto-detect
+
+# Output image size
+IMAGE_W = 160
+IMAGE_H = 120
+```
+
+From `donkeycar/templates/cfg_simulator.py:277-279`.
+
+### OakD Part
+
+```python
+from donkeycar.parts.oak_d import OakD
+
+# Create camera
+camera = OakD(
+    width=cfg.IMAGE_W,
+    height=cfg.IMAGE_H,
+    enable_rgb=cfg.OAKD_RGB,
+    enable_depth=cfg.OAKD_DEPTH,
+    device_id=cfg.OAKD_ID
+)
+
+# Add to vehicle
+V.add(camera,
+      outputs=['cam/image_array', 'cam/depth_array'],
+      threaded=True)
+```
+
+From `donkeycar/parts/oak_d.py:34-86`.
+
+### Native Resolution
+
+```python
+# Native capture
+WIDTH = 640
+HEIGHT = 480
+
+# RGB: 1080p downscaled to 640x480
+# Depth: Native 640x480 from stereo pair
+```
+
+From `donkeycar/parts/oak_d.py:30-31`.
+
+### Device Selection
+
+List and select devices:
+
+```python
+# Set to "list" to show connected devices
+device_id = "list"
+camera = OakD(device_id=device_id)
+# Exits after printing device list
+
+# Or use specific serial
+device_id = "18443010C1E4681200"
+camera = OakD(device_id=device_id)
+```
+
+From `donkeycar/parts/oak_d.py:89-117`.
+
+### Pipeline Configuration
+
+OAK-D uses a pipeline architecture:
+
+```python
+def setup_rgb_camera(self, width, height):
+    cam_rgb = self.pipeline.create(depthai.node.ColorCamera)
+    cam_rgb.setResolution(depthai.ColorCameraProperties.SensorResolution.THE_1080_P)
+    cam_rgb.setVideoSize(width, height)
+    
+    xout_rgb = self.pipeline.create(depthai.node.XLinkOut)
+    xout_rgb.setStreamName("rgb")
+    cam_rgb.video.link(xout_rgb.input)
+
+def setup_depth_camera(self, width, height):
+    mono_left = self.get_mono_camera(self.pipeline, True)
+    mono_right = self.get_mono_camera(self.pipeline, False)
+    stereo = self.get_stereo_pair(self.pipeline, mono_left, mono_right)
+    
+    xout_depth = self.pipeline.createXLinkOut()
+    xout_depth.setStreamName("depth")
+    stereo.depth.link(xout_depth.input)
+```
+
+From `donkeycar/parts/oak_d.py:119-173`.
+
+### Testing
+
+Run self-test:
+
+```bash
+python -m donkeycar.parts.oak_d \
+    --rgb \
+    --depth \
+    --device_id 18443010C1E4681200
+```
+
+From `donkeycar/parts/oak_d.py:260-381`.
+
+## Using Depth Data
+
+### Depth Image Format
+
+Depth is stored as uint16 array:
+
+```python
+# RealSense depth
+depth_image = np.asanyarray(depth_frame.get_data(), dtype=np.uint16)
+# Values in millimeters, 0 = invalid
+
+# Example: get distance at pixel (x, y)
+distance_mm = depth_image[y, x]
+distance_m = distance_mm / 1000.0
+```
+
+From `donkeycar/parts/realsense435i.py:158`.
+
+### Obstacle Detection
+
+Detect obstacles in front:
+
+```python
+class DepthObstacleDetector:
+    def __init__(self, min_distance=500, roi_height=0.5):
+        self.min_distance = min_distance  # mm
+        self.roi_height = roi_height
+        
+    def run(self, depth_array):
+        if depth_array is None:
+            return False
+            
+        h, w = depth_array.shape
+        # Check center region
+        roi = depth_array[int(h*0.3):int(h*0.7), int(w*0.3):int(w*0.7)]
+        
+        # Find valid depths
+        valid = roi[roi > 0]
+        if len(valid) == 0:
+            return False
+            
+        # Check minimum distance
+        min_depth = np.min(valid)
+        return min_depth < self.min_distance
+
+# Add to vehicle
+detector = DepthObstacleDetector(min_distance=500)
+V.add(detector,
+      inputs=['cam/depth_array'],
+      outputs=['obstacle/detected'])
+```
+
+### Depth Visualization
+
+Convert depth to color image:
+
+```python
+import cv2
+
+def depth_to_color(depth_image):
+    """Convert depth to color map"""
+    # Normalize to 0-255
+    depth_colormap = cv2.applyColorMap(
+        cv2.convertScaleAbs(depth_image, alpha=0.03),
+        cv2.COLORMAP_JET
+    )
+    return depth_colormap
+
+# Add to vehicle
+class DepthColorizer:
+    def run(self, depth_array):
+        return depth_to_color(depth_array)
+
+V.add(DepthColorizer(),
+      inputs=['cam/depth_array'],
+      outputs=['cam/depth_color'])
+```
+
+From `donkeycar/parts/realsense435i.py:290-292` (test code).
+
+### Point Cloud Generation
+
+Convert depth to 3D points:
+
+```python
+import pyrealsense2 as rs
+
+class PointCloudGenerator:
+    def __init__(self):
+        self.pc = rs.pointcloud()
+        self.points = rs.points()
+        
+    def run(self, depth_frame, color_frame):
+        # Generate point cloud
+        self.pc.map_to(color_frame)
+        self.points = self.pc.calculate(depth_frame)
+        
+        # Get vertices
+        vertices = np.asanyarray(self.points.get_vertices())
+        # Returns Nx3 array of (x, y, z) in meters
+        
+        return vertices
+```
+
+## Recording Depth Data
+
+Add depth to tub:
+
+```python
+# Tub configuration
+inputs = [
+    'cam/image_array',
+    'cam/depth_array',  # Depth as uint16 array
+    'user/angle',
+    'user/throttle'
+]
+
+types = [
+    'image_array',
+    'image_array',  # Depth stored as image
+    'float',
+    'float'
+]
+
+tub_writer = TubWriter(tub_path, inputs=inputs, types=types)
+V.add(tub_writer, inputs=inputs, outputs=["tub/num_records"],
+      run_condition='recording')
+```
+
+Note: Depth data significantly increases tub size.
+
+## Training with Depth
+
+### Stacked Input
+
+Combine RGB and depth:
+
+```python
+class DepthRGBStack:
+    def run(self, rgb_image, depth_image):
+        # Normalize depth to 0-255
+        depth_norm = cv2.normalize(depth_image, None, 0, 255, cv2.NORM_MINMAX)
+        depth_8bit = depth_norm.astype(np.uint8)
+        
+        # Expand to 3 channels
+        depth_3ch = cv2.cvtColor(depth_8bit, cv2.COLOR_GRAY2RGB)
+        
+        # Stack horizontally
+        combined = np.hstack((rgb_image, depth_3ch))
+        return combined
+
+V.add(DepthRGBStack(),
+      inputs=['cam/image_array', 'cam/depth_array'],
+      outputs=['cam/combined'])
+```
+
+### Dual-Branch Model
+
+Process RGB and depth separately:
+
+```python
+# In your model architecture
+rgb_input = Input(shape=(120, 160, 3))
+depth_input = Input(shape=(120, 160, 1))
+
+# RGB branch
+rgb_branch = Conv2D(...)(rgb_input)
+rgb_branch = ...
+
+# Depth branch  
+depth_branch = Conv2D(...)(depth_input)
+depth_branch = ...
+
+# Merge
+merged = concatenate([rgb_branch, depth_branch])
+output = Dense(...)(merged)
+
+model = Model(inputs=[rgb_input, depth_input], outputs=output)
+```
+
+## Performance Optimization
+
+### Resolution
+
+Lower resolution for faster processing:
+
+```python
+# Faster processing
+IMAGE_W = 160
+IMAGE_H = 120
+
+# Higher quality
+IMAGE_W = 320
+IMAGE_H = 240
+```
+
+### Selective Capture
+
+```python
+# Only RGB (faster)
+REALSENSE_D435_RGB = True
+REALSENSE_D435_DEPTH = False
+REALSENSE_D435_IMU = False
+
+# Only depth (obstacle detection)
+REALSENSE_D435_RGB = False
+REALSENSE_D435_DEPTH = True
+```
+
+### Frame Decimation
+
+Process every Nth frame:
+
+```python
+class FrameDecimator:
+    def __init__(self, skip=2):
+        self.skip = skip
+        self.count = 0
+        self.last_depth = None
+        
+    def run(self, depth_array):
+        self.count += 1
+        if self.count % self.skip == 0:
+            self.last_depth = depth_array
+        return self.last_depth
+
+V.add(FrameDecimator(skip=3),
+      inputs=['cam/depth_array'],
+      outputs=['cam/depth_decimated'])
+```
+
+## Troubleshooting
+
+### RealSense Not Detected
+
+```bash
+# Check USB connection
+lsusb | grep Intel
+
+# Update firmware
+realsense-viewer
+# Check "More" → "Update Firmware"
+
+# Rebuild librealsense
+cd installLibrealsense
+./buildLibrealsense.sh
+```
+
+### OAK-D Not Found
+
+```bash
+# Check USB permissions
+ls -l /dev/bus/usb/*/*
+
+# Re-apply udev rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+
+# List devices
+python -c "import depthai as dai; print(dai.Device.getAllAvailableDevices())"
+```
+
+### Poor Depth Quality
+
+- Avoid direct sunlight (interferes with IR)
+- Ensure adequate lighting for RGB
+- Keep lenses clean
+- Avoid reflective/transparent surfaces
+- Check depth range (too close or too far)
+
+### High CPU Usage
+
+- Lower resolution
+- Disable unused streams
+- Use threaded=True
+- Process depth at lower frequency
+
+## Best Practices
+
+1. **Mount rigidly** - Vibration affects stereo calibration
+2. **Test depth range** - Verify min/max distances for your use case
+3. **Use threading** - Don't block vehicle loop
+4. **Filter invalid depth** - Check for zero values
+5. **Align streams** - Use built-in alignment
+6. **Calibrate** - Factory calibration usually sufficient
+7. **Consider lighting** - IR works in low light, RGB needs illumination
+
+## Next Steps
+
+- Implement obstacle avoidance with depth
+- Combine with [lidar](/advanced/lidar) for 360° perception
+- Use IMU for [kinematics](/advanced/kinematics) integration
+- Stream depth via [telemetry](/advanced/telemetry)
+- Test in [simulator](/advanced/simulator) first

@@ -1,0 +1,494 @@
+---
+title: Keras Model Parts
+description: Keras and TensorFlow model architectures for autonomous driving
+---
+
+Keras model parts use deep learning to predict steering and throttle from camera images and other sensor inputs.
+
+## Base Class: KerasPilot
+
+All Keras models inherit from `KerasPilot`.
+
+**Location**: `donkeycar/parts/keras.py:49`
+
+```python
+from donkeycar.parts.keras import KerasPilot
+from donkeycar.parts.interpreter import KerasInterpreter
+
+class MyPilot(KerasPilot):
+    def __init__(self):
+        super().__init__(
+            interpreter=KerasInterpreter(),
+            input_shape=(120, 160, 3)  # Height, Width, Channels
+        )
+    
+    def create_model(self):
+        # Define your model architecture
+        pass
+    
+    def compile(self):
+        # Compile with loss and optimizer
+        pass
+    
+    def interpreter_to_output(self, interpreter_out):
+        # Convert model output to (angle, throttle)
+        return angle, throttle
+```
+
+**Key Methods**:
+- `create_model()` - Define neural network architecture
+- `compile()` - Set optimizer, loss, and metrics
+- `run(img_arr, *other_arr)` - Inference during driving
+- `train()` - Train the model
+- `load(model_path)` - Load saved model
+- `interpreter_to_output()` - Convert raw output to control values
+
+## Model Types
+
+### KerasCategorical
+
+Discretizes steering and throttle into bins using categorical cross-entropy.
+
+**Location**: `donkeycar/parts/keras.py:256`
+
+```python
+from donkeycar.parts.keras import KerasCategorical
+
+model = KerasCategorical(
+    input_shape=(120, 160, 3),
+    throttle_range=0.5  # Throttle range for binning
+)
+```
+
+**Architecture** (default_categorical):
+```python
+def default_categorical(input_shape=(120, 160, 3)):
+    from tensorflow.keras.layers import Input, Conv2D, Dropout, Flatten, Dense
+    from tensorflow.keras.models import Model
+    
+    img_in = Input(shape=input_shape, name='img_in')
+    
+    x = img_in
+    x = Conv2D(24, (5, 5), strides=(2, 2), activation='relu', name='conv1')(x)
+    x = Conv2D(32, (5, 5), strides=(2, 2), activation='relu', name='conv2')(x)
+    x = Conv2D(64, (5, 5), strides=(2, 2), activation='relu', name='conv3')(x)
+    x = Conv2D(64, (3, 3), strides=(1, 1), activation='relu', name='conv4')(x)
+    x = Conv2D(64, (3, 3), strides=(1, 1), activation='relu', name='conv5')(x)
+    
+    x = Flatten(name='flattened')(x)
+    x = Dense(100, activation='relu', name='dense1')(x)
+    x = Dropout(0.1)(x)
+    x = Dense(50, activation='relu', name='dense2')(x)
+    x = Dropout(0.1)(x)
+    
+    # Categorical outputs (15 bins each)
+    angle_out = Dense(15, activation='softmax', name='angle_out')(x)
+    throttle_out = Dense(15, activation='softmax', name='throttle_out')(x)
+    
+    model = Model(inputs=[img_in], outputs=[angle_out, throttle_out])
+    return model
+```
+
+**Features**:
+- Converts continuous values to discrete bins
+- Better gradient flow for categorical data
+- Provides confidence distribution over choices
+- Default: 15 bins for steering, 15 for throttle
+
+**Usage**:
+```python
+# Training
+model = KerasCategorical()
+model.create_model()
+model.train(
+    model_path='./models/my_categorical.h5',
+    train_data=train_dataset,
+    train_steps=100,
+    batch_size=32,
+    validation_data=val_dataset,
+    validation_steps=20,
+    epochs=10
+)
+
+# Inference
+model.load('./models/my_categorical.h5')
+angle, throttle = model.run(img_array)
+```
+
+### KerasLinear
+
+Direct regression to continuous steering/throttle values.
+
+**Location**: `donkeycar/parts/keras.py` (similar to KerasCategorical)
+
+```python
+from donkeycar.parts.keras import KerasLinear
+
+model = KerasLinear(
+    input_shape=(120, 160, 3),
+    num_outputs=2  # angle, throttle
+)
+```
+
+**Architecture** (default_n_linear):
+```python
+def default_n_linear(input_shape=(120, 160, 3), num_outputs=2):
+    from tensorflow.keras.layers import Input, Conv2D, Dropout, Flatten, Dense
+    from tensorflow.keras.models import Model
+    
+    img_in = Input(shape=input_shape, name='img_in')
+    
+    x = img_in
+    x = Conv2D(24, (5, 5), strides=(2, 2), activation='relu')(x)
+    x = Conv2D(32, (5, 5), strides=(2, 2), activation='relu')(x)
+    x = Conv2D(64, (5, 5), strides=(2, 2), activation='relu')(x)
+    x = Conv2D(64, (3, 3), strides=(1, 1), activation='relu')(x)
+    x = Conv2D(64, (3, 3), strides=(1, 1), activation='relu')(x)
+    
+    x = Flatten()(x)
+    x = Dense(100, activation='relu')(x)
+    x = Dropout(0.1)(x)
+    x = Dense(50, activation='relu')(x)
+    x = Dropout(0.1)(x)
+    
+    outputs = Dense(num_outputs, activation='linear', name='outputs')(x)
+    
+    model = Model(inputs=[img_in], outputs=[outputs])
+    return model
+```
+
+**Features**:
+- Direct regression to continuous values
+- Simpler output interpretation
+- MSE or MAE loss functions
+- Good for smooth control
+
+### KerasIMU
+
+Multi-input model using camera + IMU data.
+
+**Location**: `donkeycar/parts/keras.py`
+
+```python
+from donkeycar.parts.keras import KerasIMU
+
+model = KerasIMU(
+    input_shape=(120, 160, 3),
+    num_imu_inputs=6  # accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z
+)
+```
+
+**Architecture**:
+```python
+def default_imu_model(img_shape=(120, 160, 3), num_imu=6, num_outputs=2):
+    from tensorflow.keras.layers import Input, Conv2D, Flatten, Dense, concatenate
+    from tensorflow.keras.models import Model
+    
+    # Image input branch
+    img_in = Input(shape=img_shape, name='img_in')
+    x = Conv2D(24, (5, 5), strides=(2, 2), activation='relu')(img_in)
+    x = Conv2D(32, (5, 5), strides=(2, 2), activation='relu')(x)
+    x = Flatten()(x)
+    
+    # IMU input branch
+    imu_in = Input(shape=(num_imu,), name='imu_in')
+    y = Dense(64, activation='relu')(imu_in)
+    y = Dense(32, activation='relu')(y)
+    
+    # Merge branches
+    merged = concatenate([x, y])
+    z = Dense(100, activation='relu')(merged)
+    z = Dense(50, activation='relu')(z)
+    
+    outputs = Dense(num_outputs, activation='linear')(z)
+    
+    model = Model(inputs=[img_in, imu_in], outputs=[outputs])
+    return model
+```
+
+**Usage**:
+```python
+# Add to vehicle
+V.add(model,
+      inputs=['cam/image_array', 
+              'imu/accel_x', 'imu/accel_y', 'imu/accel_z',
+              'imu/gyro_x', 'imu/gyro_y', 'imu/gyro_z'],
+      outputs=['pilot/angle', 'pilot/throttle'])
+```
+
+### KerasLSTM / KerasRNN
+
+Recurrent models that consider temporal sequences.
+
+**Location**: `donkeycar/parts/keras.py`
+
+```python
+from donkeycar.parts.keras import KerasLSTM
+
+model = KerasLSTM(
+    input_shape=(120, 160, 3),
+    seq_length=3  # Number of frames to consider
+)
+```
+
+**Architecture**:
+```python
+def default_lstm(input_shape=(120, 160, 3), seq_length=3):
+    from tensorflow.keras.layers import Input, Conv2D, Flatten, LSTM, Dense
+    from tensorflow.keras.layers import TimeDistributed as TD
+    from tensorflow.keras.models import Model
+    
+    # Input is a sequence of images
+    img_seq_in = Input(shape=(seq_length, *input_shape), name='img_in')
+    
+    # TimeDistributed applies Conv layers to each frame
+    x = TD(Conv2D(24, (5, 5), strides=(2, 2), activation='relu'))(img_seq_in)
+    x = TD(Conv2D(32, (5, 5), strides=(2, 2), activation='relu'))(x)
+    x = TD(Flatten())(x)
+    
+    # LSTM processes the sequence
+    x = LSTM(128, return_sequences=False)(x)
+    x = Dense(50, activation='relu')(x)
+    
+    outputs = Dense(2, activation='linear')(x)
+    
+    model = Model(inputs=[img_seq_in], outputs=[outputs])
+    return model
+```
+
+**Features**:
+- Considers multiple frames (temporal context)
+- Better for handling motion blur, occlusions
+- Requires sequence buffering
+- Higher computational cost
+
+## Model Training
+
+### Training Configuration
+
+In `myconfig.py`:
+
+```python
+# Model type
+DEFAULT_MODEL_TYPE = 'linear'  # Options: linear, categorical, lstm, imu
+
+# Training parameters
+BATCH_SIZE = 128
+TRAIN_TEST_SPLIT = 0.8
+EPOCHS = 10
+VERBOSE_TRAIN = 1
+
+# Early stopping
+MIN_DELTA = 0.0005
+PATIENCE = 5
+
+# Optimizer
+LEARNING_RATE = 0.001
+LEARNING_RATE_DECAY = 0.0
+OPTIMIZER = 'adam'  # Options: adam, sgd, rmsprop
+
+# Image processing
+IMAGE_W = 160
+IMAGE_H = 120
+IMAGE_DEPTH = 3
+
+# Augmentation
+AUG_MULTIPLY_FACTOR = 1.0
+AUG_BRIGHTNESS_RANGE = (0.5, 1.5)
+AUG_CROP_PERCENT_RANGE = (0, 0.2)
+AUG_BLUR_RANGE = (0.0, 1.1)
+```
+
+### Training Command
+
+```bash
+donkey train --tub ./data --model ./models/my_model.h5
+```
+
+**Training Script Example**:
+
+```python
+from donkeycar.parts.keras import KerasLinear
+from donkeycar.pipeline.training import train
+
+# Create model
+model = KerasLinear()
+model.create_model()
+
+# Train
+history = train(
+    cfg=cfg,
+    tub_paths=['./data/tub_1', './data/tub_2'],
+    model=model,
+    model_type='linear',
+    transfer_model=None,
+    comment='my_first_model'
+)
+```
+
+## Model Inference
+
+### Loading Models
+
+```python
+from donkeycar.parts.keras import KerasLinear
+
+# Create model instance
+model = KerasLinear()
+
+# Load weights
+model.load('./models/my_model.h5')
+
+# Or for TFLite
+from donkeycar.parts.interpreter import TfLiteInterpreter
+model = KerasLinear(interpreter=TfLiteInterpreter())
+model.load('./models/my_model.tflite')
+```
+
+### Using in Vehicle
+
+```python
+# In manage.py
+from donkeycar.parts.keras import get_model_by_type
+
+# Load model
+kl = get_model_by_type(cfg.DEFAULT_MODEL_TYPE, cfg=cfg)
+kl.load(cfg.MODEL_PATH)
+
+# Add to vehicle
+V.add(kl,
+      inputs=['cam/image_array'],
+      outputs=['pilot/angle', 'pilot/throttle'],
+      run_condition='run_pilot')
+```
+
+## Model Architectures
+
+### Available Architectures
+
+**Location**: `donkeycar/parts/keras.py`
+
+- **default_categorical** - Standard categorical model
+- **default_n_linear** - Standard linear regression
+- **default_imu** - Multi-input with IMU
+- **default_lstm** - LSTM for sequences
+- **default_3d_conv** - 3D convolutions for video
+- **default_latent** - Variational autoencoder
+
+### Custom Architecture
+
+```python
+from tensorflow.keras.layers import Input, Conv2D, Flatten, Dense
+from tensorflow.keras.models import Model
+
+def my_custom_model(input_shape=(120, 160, 3)):
+    img_in = Input(shape=input_shape, name='img_in')
+    
+    # Custom architecture
+    x = Conv2D(16, (3, 3), activation='relu')(img_in)
+    x = Conv2D(32, (3, 3), activation='relu')(x)
+    x = Flatten()(x)
+    x = Dense(64, activation='relu')(x)
+    
+    # Outputs
+    angle = Dense(1, activation='linear', name='angle')(x)
+    throttle = Dense(1, activation='linear', name='throttle')(x)
+    
+    model = Model(inputs=[img_in], outputs=[angle, throttle])
+    return model
+
+# Use custom model
+from donkeycar.parts.keras import KerasLinear
+
+class MyCustomPilot(KerasLinear):
+    def create_model(self):
+        return my_custom_model(self.input_shape)
+```
+
+## Model Export
+
+### TensorFlow Lite
+
+For edge deployment:
+
+```python
+import tensorflow as tf
+
+# Load Keras model
+model = tf.keras.models.load_model('./models/my_model.h5')
+
+# Convert to TFLite
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_model = converter.convert()
+
+# Save
+with open('./models/my_model.tflite', 'wb') as f:
+    f.write(tflite_model)
+```
+
+### SavedModel Format
+
+```python
+import tensorflow as tf
+
+model = tf.keras.models.load_model('./models/my_model.h5')
+model.save('./models/my_model_saved', save_format='tf')
+```
+
+## Performance Optimization
+
+### Model Quantization
+
+```python
+import tensorflow as tf
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_types = [tf.float16]
+tflite_model = converter.convert()
+```
+
+### Mixed Precision Training
+
+```python
+from tensorflow.keras import mixed_precision
+
+# Enable mixed precision
+policy = mixed_precision.Policy('mixed_float16')
+mixed_precision.set_global_policy(policy)
+
+# Train as usual
+model.compile(...)
+```
+
+## Common Issues
+
+### Model Overfitting
+
+- Reduce model complexity
+- Add more dropout layers
+- Increase training data
+- Use data augmentation
+- Add L2 regularization
+
+### Poor Performance
+
+- Check training/validation loss curves
+- Verify data quality (clean bad examples)
+- Try different learning rates
+- Use transfer learning
+- Ensure proper train/test split
+
+### Memory Issues
+
+- Reduce batch size
+- Use model quantization
+- Convert to TFLite
+- Use gradient checkpointing
+
+## Next Steps
+
+- [PyTorch Models](/parts/pytorch-models) - Alternative framework
+- [Data Stores](/parts/data-stores) - Prepare training data
+- [Custom Parts](/parts/custom-parts) - Create custom models

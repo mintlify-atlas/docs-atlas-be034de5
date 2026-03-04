@@ -1,0 +1,183 @@
+---
+title: Introduction to Donkeycar
+description: A minimalist and modular self-driving library for Python, designed for hobbyists and students to build autonomous vehicles
+---
+
+Donkeycar is a minimalist and modular self-driving library for Python. It is developed for hobbyists and students with a focus on allowing fast experimentation and easy community contributions.
+
+## What is Donkeycar?
+
+Donkeycar is being actively used at the high school and university level for learning and research. It offers a rich graphical interface and includes a simulator so you can experiment with self-driving even before you build a robot.
+
+<Note>
+Donkeycar is designed to be the "Hello World" of autonomous driving - it is simple yet flexible and powerful.
+</Note>
+
+## Key Features
+
+### Modular Architecture
+
+Donkeycar is built around a modular **Vehicle** and **Parts** architecture. A Donkeycar application is organized as a pipeline of software parts that run in order on each pass through the vehicle loop, reading inputs and writing outputs to the vehicle's software memory.
+
+```python
+from donkeycar import Vehicle
+from donkeycar.parts.cv import CvCam
+from donkeycar.parts.tub_v2 import TubWriter
+import time
+
+# Define a vehicle to take and record pictures 10 times per second
+V = Vehicle()
+
+IMAGE_W = 160
+IMAGE_H = 120
+IMAGE_DEPTH = 3
+
+# Add a camera part
+cam = CvCam(image_w=IMAGE_W, image_h=IMAGE_H, image_d=IMAGE_DEPTH)
+V.add(cam, outputs=['image'], threaded=True)
+
+# Warmup camera
+while cam.run() is None:
+    time.sleep(1)
+
+# Add tub part to record images
+tub = TubWriter(path='./dat', inputs=['image'], types=['image_array'])
+V.add(tub, inputs=['image'], outputs=['num_records'])
+
+# Start the drive loop at 10 Hz
+V.start(rate_hz=10)
+```
+
+### Multiple Hardware Platforms
+
+Donkeycar runs on various platforms:
+- **Raspberry Pi** (recommended on-board computer)
+- **Jetson Nano** (for more compute-intensive applications)
+- **PC/Mac** (for development and simulation)
+
+### Rich Hardware Support
+
+A typical Donkeycar has parts that:
+- **Get images** from various camera types including standard cameras, 3D cameras, and lidar
+- **Read GPS position** from GPS receivers for path following
+- **Accept user input** from game controllers (PS3, PS4, Xbox, WiiU, Nimbus, Logitech) or RC controllers
+- **Control drivetrain motors** supporting various configurations:
+  - ESC/Steering-servo (standard RC car)
+  - Differential drive
+  - H-Bridge motor drivers
+- **Record telemetry data** including camera images, steering/throttle inputs, lidar data, and more
+
+### Three Types of Autopilots
+
+<CodeGroup>
+```python title="Deep Learning Autopilot"
+# Uses neural networks (TensorFlow, TensorFlow Lite, PyTorch)
+# Learns from human driving data
+# Supports multiple model architectures
+```
+
+```python title="GPS Path Following"
+# Follows pre-recorded GPS waypoints
+# Ideal for outdoor navigation
+```
+
+```python title="Computer Vision"
+# Uses traditional CV techniques
+# Line following and object detection
+```
+</CodeGroup>
+
+## Use Cases
+
+### DIY Robocars Racing
+
+Compete in self-driving races like DIY Robocars, including online simulator races against competitors from around the world.
+
+<Tip>
+Donkeycar includes a built-in simulator so you can race virtually before building physical hardware.
+</Tip>
+
+### Research and Education
+
+Donkeycar is actively used in:
+- High school STEM programs
+- University research projects
+- Machine learning education
+- Robotics courses
+
+### Experimentation
+
+Experiment with:
+- Autopilots and neural networks
+- GPS navigation
+- Computer vision algorithms
+- Sensor fusion
+
+### Community Learning
+
+Participate in a vibrant online community learning cutting-edge technology and having fun doing it.
+
+## Prerequisites
+
+<Note>
+**TL;DR:** No specific prerequisite knowledge is required to get started with Donkeycar!
+</Note>
+
+However, it helps if you have some knowledge of:
+
+### Python Programming
+
+You do not have to do any programming to use Donkeycar. The file you edit to configure your car, `myconfig.py`, is a Python file. You mostly just uncomment the sections you want to change and edit them.
+
+<Tip>
+Knowing how Python comments and indentation work helps avoid common mistakes.
+</Tip>
+
+### Raspberry Pi
+
+The Raspberry Pi is the preferred on-board computer for a Donkeycar. It is helpful to have set up and used a Raspberry Pi, but it is not necessary. You should be comfortable with:
+- Installing Raspberry Pi OS using Raspberry Pi Imager
+- Configuring the Raspberry Pi using `raspi-config`
+- Basic navigation and file operations
+
+### Linux Command Line
+
+You will type commands into the terminal to install and start the Donkeycar software. Helpful skills include:
+- Navigating the file system
+- Listing, copying, and deleting files and directories
+- Remote access via SSH or VNC
+
+## Project Information
+
+<CardGroup cols={2}>
+  <Card title="Current Version" icon="tag">
+    v5.2.dev6
+  </Card>
+  <Card title="Python Version" icon="python">
+    Python 3.11
+  </Card>
+  <Card title="License" icon="scale-balanced">
+    MIT License
+  </Card>
+  <Card title="Authors" icon="users">
+    Will Roscoe, Adam Conway, Tawn Kramer
+  </Card>
+</CardGroup>
+
+## Quick Links
+
+- [GitHub Repository](https://github.com/autorope/donkeycar)
+- [Official Website](http://donkeycar.com)
+- [Community Discord](https://discord.gg/PN6kFeA)
+- [Build Instructions](http://docs.donkeycar.com)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get started with your first autonomous car
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Detailed installation instructions for your platform
+  </Card>
+</CardGroup>

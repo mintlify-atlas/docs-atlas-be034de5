@@ -1,0 +1,438 @@
+---
+title: Sensor Parts
+description: IMU, GPS, encoders, and other sensor parts for Donkeycar
+---
+
+Sensor parts provide additional data about your vehicle's state and environment.
+
+## IMU (Inertial Measurement Unit)
+
+Measures acceleration, rotation, and orientation.
+
+**Location**: `donkeycar/parts/imu.py:9`
+
+### Supported Sensors
+
+- **MPU6050**: 6-axis (accelerometer + gyroscope)
+- **MPU9250**: 9-axis (accelerometer + gyroscope + magnetometer)
+
+```python
+from donkeycar.parts.imu import IMU, SENSOR_MPU6050, SENSOR_MPU9250
+
+imu = IMU(
+    addr=0x68,                      # I2C address
+    poll_delay=0.0166,              # Poll interval (60Hz)
+    sensor=SENSOR_MPU6050,          # Sensor type
+    dlp_setting=0                   # Digital low-pass filter (0=disabled)
+)
+```
+
+**Installation**:
+
+```bash
+# For MPU6050
+sudo apt install python3-smbus
+pip install mpu6050-raspberrypi
+
+# For MPU9250  
+pip install mpu9250-jmdev
+```
+
+**Enable I2C**:
+```bash
+sudo raspi-config
+# Interface Options -> I2C -> Enable
+```
+
+**Usage**:
+```python
+# Add to vehicle
+V.add(imu, 
+      outputs=['imu/accel_x', 'imu/accel_y', 'imu/accel_z',
+               'imu/gyro_x', 'imu/gyro_y', 'imu/gyro_z', 'imu/temp'],
+      threaded=True)
+
+# Or run directly
+accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, temp = imu.run()
+```
+
+**Outputs**:
+- **Accelerometer** (m/s²): Linear acceleration on X, Y, Z axes
+- **Gyroscope** (rad/s): Angular velocity on X, Y, Z axes  
+- **Temperature** (°C): Die temperature
+- **Magnetometer** (MPU9250 only, μT): Magnetic field on X, Y, Z axes
+
+**Digital Low-Pass Filter**:
+
+```python
+# Common DLP settings (gyro/accel bandwidth)
+# 0: Disabled (8kHz/1kHz)
+# 1: 184Hz/188Hz
+# 2: 94Hz/98Hz
+# 3: 44Hz/42Hz
+# 4: 21Hz/20Hz
+# 5: 10Hz/10Hz
+# 6: 5Hz/5Hz
+
+imu = IMU(sensor=SENSOR_MPU6050, dlp_setting=3)  # 44Hz filter
+```
+
+**Testing**:
+```bash
+cd ~/mycar
+python -c "from donkeycar.parts.imu import IMU; import time; imu = IMU(); [print(imu.run()) or time.sleep(0.1) for _ in range(10)]"
+```
+
+## GPS
+
+Global positioning from NMEA-compatible GPS modules.
+
+**Location**: `donkeycar/parts/gps.py`
+
+### GpsNmeaPositions
+
+Converts NMEA sentences to UTM coordinates.
+
+```python
+from donkeycar.parts.gps import GpsNmeaPositions
+from donkeycar.parts.serial_port import SerialPort, SerialLineReader
+
+# Open serial port
+serial_port = SerialPort(
+    port='/dev/ttyUSB0',  # Or /dev/ttyAMA0 for Pi GPIO
+    baudrate=9600,
+    timeout=0.5
+)
+
+# Read NMEA lines
+line_reader = SerialLineReader(
+    serial_port,
+    max_lines=10
+)
+
+# Convert to positions
+gps_reader = GpsNmeaPositions(debug=False)
+
+# Add to vehicle
+V.add(line_reader, outputs=['nmea/lines'], threaded=True)
+V.add(gps_reader, inputs=['nmea/lines'], outputs=['gps/positions'])
+```
+
+**Outputs**:
+- List of (timestamp, x, y) tuples
+- x, y in UTM coordinates (meters)
+
+### GpsPosition
+
+Combined GPS reader that returns the latest position.
+
+**Location**: `donkeycar/parts/gps.py:54`
+
+```python
+from donkeycar.parts.gps import GpsPosition
+from donkeycar.parts.serial_port import SerialPort
+
+serial_port = SerialPort('/dev/ttyUSB0', baudrate=9600)
+gps = GpsPosition(serial=serial_port, debug=False)
+
+V.add(gps, outputs=['gps/timestamp', 'gps/x', 'gps/y'], threaded=True)
+```
+
+**NMEA Parsing**:
+
+Supports GPRMC and GNRMC sentences:
+```
+$GPRMC,003918.00,A,3806.92281,N,12235.64362,W,0.090,,060322,,,D*67
+```
+
+Parsed to:
+- Latitude/Longitude in degrees
+- Converted to UTM (x, y) in meters
+- Timestamp from sentence
+
+**Hardware Setup**:
+
+```bash
+# For USB GPS
+ls /dev/ttyUSB*  # Find device
+
+# For GPIO serial (disable console first)
+sudo raspi-config
+# Interface Options -> Serial Port
+#   -> "Would you like a login shell accessible over serial?" No
+#   -> "Would you like the serial port hardware enabled?" Yes
+
+# Check
+ls /dev/ttyAMA0 /dev/serial0
+```
+
+**Installation**:
+```bash
+pip install pynmea2 pyserial utm
+```
+
+**Testing**:
+```bash
+# Raw NMEA output
+cat /dev/ttyUSB0
+
+# Test with script
+cd ~/mycar
+python -m donkeycar.parts.gps --serial /dev/ttyUSB0 --baudrate 9600
+```
+
+## Encoders
+
+Measure wheel rotation for odometry and velocity.
+
+**Note**: The encoder.py module is deprecated. Use `tachometer.py` and `odometer.py` instead.
+
+### Rotary Encoder (Legacy)
+
+**Location**: `donkeycar/parts/encoder.py:128`
+
+GPIO-based rotary encoder (deprecated in favor of `donkeycar.parts.tachometer.Tachometer`).
+
+```python
+from donkeycar.parts.encoder import RotaryEncoder
+
+encoder = RotaryEncoder(
+    mm_per_tick=0.306096,  # Distance per encoder tick
+    pin=13,                 # GPIO pin
+    poll_delay=0.0166,     # Poll rate (60Hz)
+    debug=False
+)
+
+V.add(encoder, 
+      inputs=['user/throttle'],
+      outputs=['enc/velocity'],
+      threaded=True)
+```
+
+**Requires**: pigpio
+```bash
+sudo apt-get install pigpio python3-pigpio
+sudo systemctl enable pigpiod
+sudo systemctl start pigpiod
+```
+
+**Calibration**:
+1. Measure wheel circumference (C) in mm
+2. Count encoder ticks per revolution (T)
+3. Set `mm_per_tick = C / T`
+
+**Outputs**:
+- **velocity** (m/s): Current speed
+- **distance** (m): Total distance traveled
+
+### Tachometer (Modern)
+
+For current speed measurement, use:
+
+```python
+from donkeycar.parts.tachometer import Tachometer, GpioEncoder
+
+encoder = GpioEncoder(pin=13)
+tach = Tachometer(encoder, meters_per_tick=0.000306096)
+
+V.add(tach, outputs=['enc/velocity'], threaded=True)
+```
+
+### Odometer (Modern)
+
+For distance measurement:
+
+```python
+from donkeycar.parts.odometer import Odometer
+
+odometer = Odometer(tachometer=tach)
+
+V.add(odometer, 
+      inputs=['enc/velocity'],
+      outputs=['enc/distance'])
+```
+
+## Ultrasonic Sensors
+
+For obstacle detection and distance measurement.
+
+**Location**: Custom implementation needed
+
+```python
+import RPi.GPIO as GPIO
+import time
+
+class UltrasonicSensor:
+    def __init__(self, trigger_pin, echo_pin):
+        self.trigger = trigger_pin
+        self.echo = echo_pin
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(self.trigger, GPIO.OUT)
+        GPIO.setup(self.echo, GPIO.IN)
+        
+    def run(self):
+        # Send trigger pulse
+        GPIO.output(self.trigger, GPIO.HIGH)
+        time.sleep(0.00001)
+        GPIO.output(self.trigger, GPIO.LOW)
+        
+        # Measure echo
+        while GPIO.input(self.echo) == GPIO.LOW:
+            start = time.time()
+        while GPIO.input(self.echo) == GPIO.HIGH:
+            end = time.time()
+            
+        # Calculate distance
+        duration = end - start
+        distance = duration * 34300 / 2  # cm
+        return distance
+    
+    def shutdown(self):
+        GPIO.cleanup()
+
+# Usage
+sensor = UltrasonicSensor(trigger_pin=23, echo_pin=24)
+V.add(sensor, outputs=['ultrasonic/distance'])
+```
+
+## LIDAR
+
+For 2D/3D environment scanning.
+
+**Location**: `donkeycar/parts/lidar.py` (if available)
+
+```python
+# Example for RPLidar
+from rplidar import RPLidar
+
+class LidarPart:
+    def __init__(self, port='/dev/ttyUSB0'):
+        self.lidar = RPLidar(port)
+        self.running = True
+        self.scan_data = []
+        
+    def update(self):
+        for scan in self.lidar.iter_scans():
+            if not self.running:
+                break
+            self.scan_data = scan
+    
+    def run_threaded(self):
+        return self.scan_data
+    
+    def shutdown(self):
+        self.running = False
+        self.lidar.stop()
+        self.lidar.disconnect()
+```
+
+## Configuration
+
+In `myconfig.py`:
+
+```python
+# IMU
+HAVE_IMU = True
+IMU_SENSOR = 'mpu6050'  # or 'mpu9250'
+IMU_ADDRESS = 0x68
+IMU_DLP_CONFIG = 0
+
+# GPS
+HAVE_GPS = True
+GPS_SERIAL_PORT = '/dev/ttyUSB0'
+GPS_BAUDRATE = 9600
+
+# Encoder
+HAVE_ODOM = True
+ENCODER_TYPE = 'GPIO'  # or 'ARDUINO'
+ENCODER_PIN = 13
+MM_PER_TICK = 0.306096
+ENC_POLL_RATE = 60
+
+# Ultrasonic
+HAVE_ULTRASONIC = False
+ULTRASONIC_TRIGGER_PIN = 23
+ULTRASONIC_ECHO_PIN = 24
+```
+
+## Data Recording
+
+Add sensor outputs to TubWriter:
+
+```python
+# In manage.py
+inputs = ['cam/image_array',
+          'user/angle', 'user/throttle', 'user/mode',
+          'imu/accel_x', 'imu/accel_y', 'imu/accel_z',
+          'imu/gyro_x', 'imu/gyro_y', 'imu/gyro_z',
+          'gps/x', 'gps/y',
+          'enc/velocity']
+
+types = ['image_array',
+         'float', 'float', 'str',
+         'float', 'float', 'float',
+         'float', 'float', 'float', 
+         'float', 'float',
+         'float']
+```
+
+## Using Sensor Data in Models
+
+For IMU-augmented models:
+
+```python
+from donkeycar.parts.keras import KerasPilot
+
+class ImuPilot(KerasPilot):
+    def run(self, img_arr, accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z):
+        # Use IMU data along with image
+        return self.inference_from_dict({
+            'img_in': normalize_image(img_arr),
+            'imu_in': np.array([accel_x, accel_y, accel_z, 
+                                gyro_x, gyro_y, gyro_z])
+        })
+```
+
+## Common Issues
+
+### IMU Not Detected
+
+```bash
+# Check I2C
+sudo i2cdetect -y 1
+# Should show 0x68 or 0x69
+
+# If not found, check connections and enable I2C
+sudo raspi-config
+```
+
+### GPS No Fix
+
+- Ensure antenna has clear view of sky
+- Wait 30-60 seconds for initial fix (cold start)
+- Check NMEA output: `cat /dev/ttyUSB0`
+- Verify GPS LED is blinking
+
+### Encoder Not Counting
+
+- Check GPIO pin connections
+- Verify pigpio daemon is running: `sudo systemctl status pigpiod`
+- Test with multimeter or oscilloscope
+- Check for proper pull-up/pull-down resistors
+
+### Serial Port Permission Denied
+
+```bash
+# Add user to dialout group
+sudo usermod -a -G dialout $USER
+# Log out and back in
+
+# Or temporarily
+sudo chmod 666 /dev/ttyUSB0
+```
+
+## Next Steps
+
+- [Keras Models](/parts/keras-models) - Use sensor data in AI models
+- [Data Stores](/parts/data-stores) - Record sensor data
+- [Custom Parts](/parts/custom-parts) - Create custom sensors

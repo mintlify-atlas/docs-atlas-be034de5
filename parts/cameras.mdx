@@ -1,0 +1,334 @@
+---
+title: Camera Parts
+description: Camera parts for image capture in Donkeycar
+---
+
+Camera parts capture images from various camera hardware. All cameras inherit from `BaseCamera` and provide a consistent interface for the vehicle.
+
+## Available Cameras
+
+### PiCamera (Raspberry Pi Camera Module)
+
+The standard camera for Raspberry Pi using the Picamera2 library (Bullseye/Bookworm).
+
+**Location**: `donkeycar/parts/camera.py:23`
+
+```python
+from donkeycar.parts.camera import PiCamera
+
+cam = PiCamera(
+    image_w=160,      # Image width
+    image_h=120,      # Image height
+    image_d=3,        # Image depth (3=RGB, 1=grayscale)
+    vflip=False,      # Vertical flip
+    hflip=False       # Horizontal flip
+)
+```
+
+**Parameters**:
+- `image_w`: Image width in pixels (default: 160)
+- `image_h`: Image height in pixels (default: 120)
+- `image_d`: Color depth - 3 for RGB, 1 for grayscale (default: 3)
+- `vflip`: Vertical flip boolean (default: False)
+- `hflip`: Horizontal flip boolean (default: False)
+
+**Hardware Setup**:
+- Connect camera ribbon cable to CSI port on Raspberry Pi
+- Enable camera interface: `sudo raspi-config` → Interface Options → Camera
+- Requires: `picamera2` library (pre-installed on recent Raspberry Pi OS)
+
+### Webcam
+
+USB webcam support using pygame.
+
+**Location**: `donkeycar/parts/camera.py:85`
+
+```python
+from donkeycar.parts.camera import Webcam
+
+cam = Webcam(
+    image_w=160,
+    image_h=120,
+    image_d=3,
+    framerate=20,
+    camera_index=0    # Index if multiple cameras
+)
+```
+
+**Parameters**:
+- `image_w`, `image_h`, `image_d`: Image dimensions
+- `framerate`: Target frames per second (default: 20)
+- `camera_index`: Camera index when multiple USB cameras (default: 0)
+
+**Installation**:
+```bash
+sudo apt-get install libsdl2-mixer-2.0-0 libsdl2-image-2.0-0 libsdl2-2.0-0
+pip install pygame
+```
+
+### CSI Camera (NVIDIA Jetson)
+
+For Jetson Nano IMX219 camera modules using GStreamer.
+
+**Location**: `donkeycar/parts/camera.py:194`
+
+```python
+from donkeycar.parts.camera import CSICamera
+
+cam = CSICamera(
+    image_w=224,
+    image_h=224,
+    image_d=3,
+    capture_width=3280,
+    capture_height=2464,
+    framerate=60,
+    gstreamer_flip=0  # 0=none, 1=rotate CCW 90, 2=flip vert, 3=rotate CW 90
+)
+```
+
+**Parameters**:
+- `capture_width`, `capture_height`: Native camera resolution
+- `image_w`, `image_h`: Output resolution (will be scaled)
+- `framerate`: Target FPS (default: 60)
+- `gstreamer_flip`: Image rotation/flip method
+
+### V4L Camera (Video4Linux)
+
+Direct V4L2 access for low-level camera control.
+
+**Location**: `donkeycar/parts/camera.py:273`
+
+```python
+from donkeycar.parts.camera import V4LCamera
+
+cam = V4LCamera(
+    image_w=160,
+    image_h=120,
+    image_d=3,
+    framerate=20,
+    dev_fn="/dev/video0",
+    fourcc='MJPG'
+)
+```
+
+**Installation**:
+```bash
+sudo apt-get install libv4l-dev
+pip install v4l2capture
+```
+
+## Advanced Cameras
+
+### OAK-D (Luxonis)
+
+Intel Movidius-based depth camera with onboard AI processing.
+
+**Location**: `donkeycar/parts/oak_d.py:34`
+
+```python
+from donkeycar.parts.oak_d import OakD
+
+cam = OakD(
+    width=640,
+    height=480,
+    enable_rgb=True,
+    enable_depth=True,
+    device_id=None  # Or specific device serial number
+)
+```
+
+**Features**:
+- RGB color camera
+- Stereo depth sensing
+- Onboard neural network inference
+- 4K video capability
+
+**Installation**:
+```bash
+pip install depthai
+# Add udev rules:
+echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="03e7", MODE="0666"' | sudo tee /etc/udev/rules.d/80-movidius.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+**Usage**:
+```python
+V.add(cam, outputs=['cam/image_array', 'cam/depth_array'], threaded=True)
+```
+
+### RealSense T265 (Intel)
+
+Tracking camera with visual-inertial odometry.
+
+**Location**: `donkeycar/parts/realsense2.py:13`
+
+```python
+from donkeycar.parts.realsense2 import RS_T265
+
+cam = RS_T265(
+    image_output=False,      # Enable fisheye image output
+    calib_filename=None      # Wheel odometry calibration file
+)
+```
+
+**Outputs**:
+- Position (x, y, z) in meters
+- Velocity (vx, vy, vz) in m/s
+- Acceleration (ax, ay, az) in m/s²
+- Optional fisheye camera images
+
+**Installation**:
+```bash
+pip install pyrealsense2
+```
+
+**Usage**:
+```python
+V.add(cam, 
+      inputs=['enc/velocity'],
+      outputs=['pos', 'vel', 'acc', 'img'], 
+      threaded=True)
+```
+
+### Leopard Imaging Camera
+
+High-performance camera for NVIDIA Jetson with built-in fast stretch.
+
+**Location**: `donkeycar/parts/leopard_imaging.py:7`
+
+```python
+from donkeycar.parts.leopard_imaging import LICamera
+
+cam = LICamera(
+    width=224,
+    height=224,
+    capture_width=1280,
+    capture_height=720,
+    fps=60
+)
+```
+
+**Features**:
+- Hardware-accelerated image processing
+- High frame rates (up to 60 FPS)
+- Optimized for Jetson platform
+
+## Testing Cameras
+
+Use the camera test script:
+
+```bash
+donkey makemovie
+```
+
+Or test in Python:
+
+```python
+from donkeycar.parts.camera import PiCamera
+import time
+
+cam = PiCamera()
+time.sleep(2)  # Warm up
+
+for i in range(10):
+    img = cam.run()
+    print(f"Frame {i}: shape={img.shape}")
+    time.sleep(0.1)
+
+cam.shutdown()
+```
+
+## Mock Cameras for Testing
+
+### MockCamera
+
+Returns a static image for testing without hardware.
+
+**Location**: `donkeycar/parts/camera.py:333`
+
+```python
+from donkeycar.parts.camera import MockCamera
+import numpy as np
+
+# Use with default blank image
+cam = MockCamera(image_w=160, image_h=120)
+
+# Or provide a specific image
+test_image = np.random.randint(0, 255, (120, 160, 3), dtype=np.uint8)
+cam = MockCamera(image=test_image)
+```
+
+### ImageListCamera
+
+Replays images from a tub for testing.
+
+**Location**: `donkeycar/parts/camera.py:350`
+
+```python
+from donkeycar.parts.camera import ImageListCamera
+
+cam = ImageListCamera(path_mask='~/mycar/data/**/images/*.jpg')
+```
+
+## Camera Configuration
+
+In `myconfig.py`:
+
+```python
+# Camera type
+CAMERA_TYPE = "PICAM"  # Options: PICAM, WEBCAM, CVCAM, CSIC, MOCK
+
+# Image dimensions
+IMAGE_W = 160
+IMAGE_H = 120
+IMAGE_DEPTH = 3  # 1 for grayscale, 3 for RGB
+
+# Camera-specific settings
+CAMERA_FRAMERATE = 20
+CAMERA_VFLIP = False
+CAMERA_HFLIP = False
+```
+
+## Common Issues
+
+### Camera Not Detected
+
+**Raspberry Pi**:
+```bash
+# Check if camera is detected
+vcgencmd get_camera
+# Should show: supported=1 detected=1
+
+# Enable camera interface
+sudo raspi-config
+# Navigate to Interface Options → Camera → Enable
+```
+
+**Jetson**:
+```bash
+# Check for video devices
+ls /dev/video*
+
+# Test GStreamer pipeline
+gst-launch-1.0 nvarguscamerasrc ! nvoverlaysink
+```
+
+### Low Frame Rate
+
+- Reduce image resolution
+- Disable unnecessary image processing
+- Use hardware acceleration when available
+- Check USB bandwidth (for USB cameras)
+
+### Image Quality Issues
+
+- Adjust lighting conditions
+- Clean camera lens
+- Check focus (if adjustable)
+- Verify correct image orientation (use flip settings)
+
+## Next Steps
+
+- [Controllers](/parts/controllers) - Add user input
+- [Models](/parts/keras-models) - Process camera images with AI
+- [Data Stores](/parts/data-stores) - Record camera data

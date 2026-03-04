@@ -1,0 +1,281 @@
+---
+title: Controller Parts API
+description: Joystick and web controller parts for manual control
+---
+
+Controller parts provide manual input for steering, throttle, mode switching, and recording control.
+
+## Web Controllers
+
+### LocalWebController
+
+Web-based controller using browser interface.
+
+**Import:**
+
+```python
+from donkeycar.parts.web_controller.web import LocalWebController
+```
+
+**Constructor:**
+
+```python
+LocalWebController(port=8887)
+```
+
+<ParamField path="port" type="int" default="8887">
+  Port for web server
+</ParamField>
+
+**Outputs:**
+- `angle`: Steering angle (-1 to 1)
+- `throttle`: Throttle value (-1 to 1)  
+- `mode`: Drive mode (user, local_angle, local)
+- `recording`: Recording state (True/False)
+
+## Physical Joystick Controllers
+
+### JoystickController
+
+Base class for physical joystick controllers.
+
+**Constructor:**
+
+```python
+JoystickController(poll_delay=0.0, throttle_scale=1.0, steering_scale=1.0,
+                   throttle_dir=-1.0, dev_fn='/dev/input/js0',
+                   auto_record_on_throttle=True)
+```
+
+<ParamField path="poll_delay" type="float" default="0.0">
+  Delay in seconds between joystick polls
+</ParamField>
+
+<ParamField path="throttle_scale" type="float" default="1.0">
+  Scale factor for throttle (0.0 to 1.0)
+</ParamField>
+
+<ParamField path="steering_scale" type="float" default="1.0">
+  Scale factor for steering (0.0 to 1.0)
+</ParamField>
+
+<ParamField path="throttle_dir" type="float" default="-1.0">
+  Direction multiplier for throttle (1.0 or -1.0)
+</ParamField>
+
+<ParamField path="dev_fn" type="str" default="/dev/input/js0">
+  Device path for joystick
+</ParamField>
+
+<ParamField path="auto_record_on_throttle" type="bool" default="true">
+  Automatically start recording when throttle is applied
+</ParamField>
+
+**Methods:**
+
+<ParamField path="run" type="(img_arr, mode, recording) -> (angle, throttle, mode, recording)">
+  Returns control outputs based on joystick state
+</ParamField>
+
+<ParamField path="run_threaded" type="(img_arr, mode, recording) -> (angle, throttle, mode, recording)">
+  Returns control outputs in threaded mode
+</ParamField>
+
+<ParamField path="update" type="() -> None">
+  Polls joystick for input events (runs in separate thread)
+</ParamField>
+
+<ParamField path="shutdown" type="() -> None">
+  Stops the controller thread
+</ParamField>
+
+<ParamField path="set_tub" type="(tub) -> None">
+  Sets the tub for record deletion functionality
+</ParamField>
+
+**Button Mappings:**
+
+Common button functions across controllers:
+- **Mode toggle**: Switch between user, local_angle, and local modes
+- **Record toggle**: Start/stop manual recording
+- **Erase records**: Delete last N records from tub
+- **Emergency stop**: Immediately stop the vehicle
+- **Increase/Decrease throttle**: Adjust max throttle scale
+- **Constant throttle**: Toggle constant throttle mode
+
+### PS3JoystickController
+
+PlayStation 3 controller support.
+
+**Constructor:**
+
+```python
+PS3JoystickController(dev_fn='/dev/input/js0', auto_record_on_throttle=True)
+```
+
+**Default Button Mapping:**
+- **Select**: Toggle mode
+- **Circle**: Toggle manual recording
+- **Triangle**: Erase last 100 records
+- **Cross**: Emergency stop
+- **D-Pad Up/Down**: Increase/decrease max throttle
+- **Start**: Toggle constant throttle
+- **L1/R1**: Chaos monkey (test mode)
+- **Left stick horizontal**: Steering
+- **Right stick vertical**: Throttle
+
+### PS4JoystickController
+
+PlayStation 4 controller support.
+
+**Constructor:**
+
+```python
+PS4JoystickController(dev_fn='/dev/input/js0', auto_record_on_throttle=True)
+```
+
+**Default Button Mapping:**
+- **Share**: Toggle mode
+- **Circle**: Toggle manual recording
+- **Triangle**: Erase last 100 records
+- **Cross**: Emergency stop
+- **L1/R1**: Increase/decrease max throttle
+- **Options**: Toggle constant throttle
+- **Left stick horizontal**: Steering
+- **Right stick vertical**: Throttle
+
+### XboxOneJoystickController
+
+Xbox One controller support.
+
+**Constructor:**
+
+```python
+XboxOneJoystickController(dev_fn='/dev/input/js0', auto_record_on_throttle=True)
+```
+
+**Default Button Mapping:**
+- **A button**: Toggle mode
+- **B button**: Toggle manual recording
+- **X button**: Erase last 100 records
+- **Y button**: Emergency stop
+- **Right/Left shoulder**: Increase/decrease max throttle
+- **Options**: Toggle constant throttle
+- **Left stick horizontal**: Steering
+- **Right stick vertical**: Throttle
+- **Right trigger**: Forward throttle (Forza mode)
+- **Left trigger**: Reverse throttle (Forza mode)
+
+### LogitechJoystickController
+
+Logitech F710 gamepad support.
+
+**Constructor:**
+
+```python
+LogitechJoystickController(dev_fn='/dev/input/js0', auto_record_on_throttle=True)
+```
+
+**Default Button Mapping:**
+- **Start**: Toggle mode
+- **B**: Toggle manual recording
+- **Y**: Erase last 100 records
+- **A**: Emergency stop
+- **Back**: Toggle constant throttle
+- **L1/R1**: Chaos monkey
+- **D-Pad Up/Down**: Increase/decrease max throttle
+- **Left stick horizontal**: Steering
+- **Right stick vertical**: Throttle
+
+## RC Receiver
+
+### RCReceiver
+
+Read RC receiver PWM signals via pigpio.
+
+**Constructor:**
+
+```python
+RCReceiver(cfg, debug=False)
+```
+
+<ParamField path="cfg" type="object">
+  Configuration object with RC GPIO pin settings
+</ParamField>
+
+**Required Config:**
+
+```python
+STEERING_RC_GPIO = 26
+THROTTLE_RC_GPIO = 20
+DATA_WIPER_RC_GPIO = 19
+PIGPIO_STEERING_MID = 1500
+PIGPIO_MAX_FORWARD = 2000
+PIGPIO_STOPPED_PWM = 1500
+PIGPIO_MAX_REVERSE = 1000
+PIGPIO_INVERT = False
+PIGPIO_JITTER = 0.025
+```
+
+**Methods:**
+
+<ParamField path="run" type="(mode, recording) -> (steering, throttle, mode, recording)">
+  Returns RC control values
+</ParamField>
+
+## Usage Examples
+
+### Web Controller
+
+```python
+from donkeycar.parts.web_controller.web import LocalWebController
+
+ctr = LocalWebController(port=8887)
+V.add(ctr,
+      inputs=['cam/image_array'],
+      outputs=['user/angle', 'user/throttle', 'user/mode', 'recording'],
+      threaded=True)
+```
+
+### PS4 Controller
+
+```python
+from donkeycar.parts.controller import PS4JoystickController
+
+ctr = PS4JoystickController(
+    throttle_dir=-1.0,
+    throttle_scale=cfg.JOYSTICK_MAX_THROTTLE,
+    steering_scale=1.0,
+    auto_record_on_throttle=cfg.AUTO_RECORD_ON_THROTTLE
+)
+
+ctr.set_deadzone(cfg.JOYSTICK_DEADZONE)
+
+V.add(ctr,
+      inputs=['cam/image_array'],
+      outputs=['user/angle', 'user/throttle', 'user/mode', 'recording'],
+      threaded=True)
+```
+
+### RC Receiver
+
+```python
+from donkeycar.parts.controller import RCReceiver
+
+ctr = RCReceiver(cfg)
+V.add(ctr,
+      inputs=['user/mode', 'recording'],
+      outputs=['user/angle', 'user/throttle', 'user/mode', 'recording'])
+```
+
+## Configuration
+
+Typical joystick configuration in `myconfig.py`:
+
+```python
+CONTROLLER_TYPE = 'ps4'  # ps3, ps4, xbox, F710, etc.
+JOYSTICK_MAX_THROTTLE = 0.5
+JOYSTICK_STEERING_SCALE = 1.0
+JOYSTICK_DEADZONE = 0.01
+AUTO_RECORD_ON_THROTTLE = True
+```

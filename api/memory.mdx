@@ -1,0 +1,469 @@
+---
+title: Memory
+description: Shared memory system for data flow between parts in the Vehicle
+---
+
+The `Memory` class is a key-value store used by the Vehicle to pass data between parts. It acts as a shared message bus where parts can publish outputs and subscribe to inputs.
+
+## Overview
+
+Memory enables loose coupling between parts. Parts don't need to know about each other - they just read and write named values to memory. The Vehicle orchestrates the data flow.
+
+```python
+from donkeycar.memory import Memory
+
+# Create a memory instance
+mem = Memory()
+
+# Store values
+mem.put(['angle', 'throttle'], (0.5, 0.8))
+
+# Retrieve values
+angle, throttle = mem.get(['angle', 'throttle'])
+print(angle)    # 0.5
+print(throttle) # 0.8
+```
+
+## Constructor
+
+### `__init__(*args, **kw)`
+
+Creates a new Memory instance. No parameters required.
+
+```python
+from donkeycar.memory import Memory
+
+mem = Memory()
+```
+
+**Attributes:**
+
+- `d` - Internal dictionary storing all key-value pairs
+
+## Methods
+
+### `get(keys)`
+
+Retrieves values from memory by key names.
+
+<ParamField path="keys" type="list" required>
+  List of string keys to retrieve from memory
+</ParamField>
+
+**Returns:**
+
+<ResponseField name="values" type="list">
+  List of values corresponding to the keys. Returns None for keys that don't exist.
+</ResponseField>
+
+**Example: Basic Retrieval**
+
+```python
+from donkeycar.memory import Memory
+
+mem = Memory()
+mem.d['cam/image_array'] = image_data
+mem.d['user/mode'] = 'user'
+
+# Get single value (returns list)
+result = mem.get(['cam/image_array'])
+image = result[0]
+
+# Get multiple values
+result = mem.get(['cam/image_array', 'user/mode'])
+image, mode = result
+print(mode)  # 'user'
+```
+
+**Example: Handling Missing Keys**
+
+```python
+mem = Memory()
+mem.d['angle'] = 0.5
+
+# Missing keys return None
+result = mem.get(['angle', 'missing_key', 'throttle'])
+print(result)  # [0.5, None, None]
+
+angle, missing, throttle = result
+if missing is None:
+    print("Key not found")
+```
+
+**Example: Vehicle Usage**
+
+```python
+import donkeycar as dk
+
+class DriveMode:
+    """Part that selects between user and pilot control"""
+    def run(self, mode, user_angle, pilot_angle):
+        if mode == 'user':
+            return user_angle
+        else:
+            return pilot_angle
+
+V = dk.vehicle.Vehicle()
+
+# The Vehicle calls get() to retrieve inputs for each part:
+# inputs = V.mem.get(['user/mode', 'user/angle', 'pilot/angle'])
+# output = part.run(*inputs)
+
+V.add(DriveMode(),
+      inputs=['user/mode', 'user/angle', 'pilot/angle'],
+      outputs=['angle'])
+```
+
+### `put(keys, inputs)`
+
+Stores values in memory. Handles both single and multiple key-value pairs.
+
+<ParamField path="keys" type="list" required>
+  List of string keys where values will be stored
+</ParamField>
+
+<ParamField path="inputs" type="any" required>
+  Value(s) to store. If keys has multiple items, inputs should be a tuple or list of values.
+</ParamField>
+
+**Example: Single Value**
+
+```python
+mem = Memory()
+
+# Store single value
+mem.put(['user/mode'], 'user')
+print(mem.d['user/mode'])  # 'user'
+```
+
+**Example: Multiple Values**
+
+```python
+mem = Memory()
+
+# Store multiple values
+mem.put(['angle', 'throttle', 'mode'], (0.5, 0.8, 'user'))
+
+print(mem.d['angle'])     # 0.5
+print(mem.d['throttle'])  # 0.8
+print(mem.d['mode'])      # 'user'
+```
+
+**Example: Vehicle Usage**
+
+```python
+import donkeycar as dk
+
+class Controller:
+    """Web controller that outputs steering and throttle"""
+    def run(self, image):
+        # User input from web UI
+        angle = self.get_user_steering()
+        throttle = self.get_user_throttle()
+        mode = self.get_mode()
+        return angle, throttle, mode
+
+V = dk.vehicle.Vehicle()
+
+# The Vehicle calls put() to store outputs from each part:
+# outputs = part.run(*inputs)
+# V.mem.put(['user/angle', 'user/throttle', 'user/mode'], outputs)
+
+V.add(Controller(),
+      inputs=['cam/image_array'],
+      outputs=['user/angle', 'user/throttle', 'user/mode'])
+```
+
+**Example: Error Handling**
+
+```python
+mem = Memory()
+
+try:
+    # Mismatched keys and values raises IndexError
+    mem.put(['angle', 'throttle'], (0.5,))  # Only one value for two keys
+except IndexError as e:
+    print(f"Error: {e}")
+    # Error: list index out of range issue with keys: throttle
+```
+
+### `update(new_d)`
+
+Updates memory with values from a dictionary.
+
+<ParamField path="new_d" type="dict" required>
+  Dictionary of key-value pairs to add or update in memory
+</ParamField>
+
+```python
+mem = Memory()
+
+# Bulk update from dictionary
+mem.update({
+    'cam/image_array': image_data,
+    'user/angle': 0.5,
+    'user/throttle': 0.8,
+    'user/mode': 'user'
+})
+
+print(mem.d['user/mode'])  # 'user'
+```
+
+### Dictionary-Style Access
+
+Memory supports dictionary-style access using `[]` operators:
+
+#### `__getitem__(key)`
+
+Retrieve values using bracket notation.
+
+<ParamField path="key" type="str | tuple" required>
+  Single key (string) or multiple keys (tuple)
+</ParamField>
+
+**Example: Single Key**
+
+```python
+mem = Memory()
+mem.d['angle'] = 0.5
+
+# Get single value
+angle = mem['angle']
+print(angle)  # 0.5
+```
+
+**Example: Multiple Keys (Tuple)**
+
+```python
+mem = Memory()
+mem.d['angle'] = 0.5
+mem.d['throttle'] = 0.8
+
+# Get multiple values as list
+values = mem[('angle', 'throttle')]
+print(values)  # [0.5, 0.8]
+```
+
+#### `__setitem__(key, value)`
+
+Store values using bracket notation.
+
+<ParamField path="key" type="str | tuple | list" required>
+  Single key (string) or multiple keys (tuple/list)
+</ParamField>
+
+<ParamField path="value" type="any" required>
+  Value(s) to store
+</ParamField>
+
+**Example: Single Value**
+
+```python
+mem = Memory()
+
+# Store single value
+mem['user/mode'] = 'user'
+print(mem.d['user/mode'])  # 'user'
+```
+
+**Example: Multiple Values**
+
+```python
+mem = Memory()
+
+# Store multiple values with tuple keys
+mem[('angle', 'throttle')] = (0.5, 0.8)
+
+print(mem.d['angle'])     # 0.5
+print(mem.d['throttle'])  # 0.8
+```
+
+### Dictionary Methods
+
+Memory provides standard dictionary methods for introspection:
+
+#### `keys()`
+
+Returns all keys in memory.
+
+```python
+mem = Memory()
+mem.put(['angle', 'throttle', 'mode'], (0.5, 0.8, 'user'))
+
+for key in mem.keys():
+    print(key)
+# Output:
+# angle
+# throttle
+# mode
+```
+
+#### `values()`
+
+Returns all values in memory.
+
+```python
+mem = Memory()
+mem.put(['angle', 'throttle'], (0.5, 0.8))
+
+for value in mem.values():
+    print(value)
+# Output:
+# 0.5
+# 0.8
+```
+
+#### `items()`
+
+Returns all key-value pairs.
+
+```python
+mem = Memory()
+mem.put(['angle', 'throttle', 'mode'], (0.5, 0.8, 'user'))
+
+for key, value in mem.items():
+    print(f"{key}: {value}")
+# Output:
+# angle: 0.5
+# throttle: 0.8
+# mode: user
+```
+
+## Common Memory Keys
+
+By convention, memory keys use the format `component/property`:
+
+### Camera
+- `cam/image_array` - Camera image as numpy array
+- `cam/depth_array` - Depth image (for stereo/depth cameras)
+
+### User Control
+- `user/angle` - Steering angle from user (-1 to 1)
+- `user/throttle` - Throttle from user (-1 to 1)
+- `user/mode` - Drive mode: 'user', 'local_angle', or 'local'
+
+### Autopilot
+- `pilot/angle` - Steering angle from AI model
+- `pilot/throttle` - Throttle from AI model
+- `run_pilot` - Boolean, whether autopilot should run
+
+### Drive Train
+- `angle` or `steering` - Final steering value sent to servo
+- `throttle` - Final throttle value sent to ESC/motor
+
+### Recording
+- `recording` - Boolean, whether data is being saved
+- `tub/num_records` - Number of records saved
+
+### Sensors
+- `enc/speed` - Speed from encoder (odometry)
+- `imu/acl_x`, `imu/acl_y`, `imu/acl_z` - Accelerometer data
+- `imu/gyr_x`, `imu/gyr_y`, `imu/gyr_z` - Gyroscope data
+- `lidar/dist_array` - LIDAR distance array
+
+## Data Flow Example
+
+Here's how data flows through memory in a typical vehicle:
+
+```python
+import donkeycar as dk
+from donkeycar.parts.camera import PiCamera
+from donkeycar.parts.controller import LocalWebController
+
+V = dk.vehicle.Vehicle()
+
+# 1. Camera captures image
+cam = PiCamera()
+V.add(cam, outputs=['cam/image_array'])
+# Memory now has: {'cam/image_array': <image>}
+
+# 2. Controller reads image, outputs controls
+ctr = LocalWebController()
+V.add(ctr,
+      inputs=['cam/image_array'],
+      outputs=['user/angle', 'user/throttle', 'user/mode'])
+# Memory now has: {'cam/image_array': <image>,
+#                  'user/angle': 0.5,
+#                  'user/throttle': 0.8,
+#                  'user/mode': 'user'}
+
+# 3. AI model reads image, outputs pilot controls
+if model_loaded:
+    kl = dk.utils.get_model_by_type('linear', cfg)
+    V.add(kl,
+          inputs=['cam/image_array'],
+          outputs=['pilot/angle', 'pilot/throttle'],
+          run_condition='run_pilot')
+    # Memory has: {'pilot/angle': 0.3, 'pilot/throttle': 0.6}
+
+# 4. DriveMode selects which controls to use
+class DriveMode:
+    def run(self, mode, user_angle, user_throttle, 
+            pilot_angle, pilot_throttle):
+        if mode == 'user':
+            return user_angle, user_throttle
+        else:
+            return pilot_angle, pilot_throttle
+
+V.add(DriveMode(),
+      inputs=['user/mode', 'user/angle', 'user/throttle',
+              'pilot/angle', 'pilot/throttle'],
+      outputs=['angle', 'throttle'])
+# Memory has: {'angle': 0.5, 'throttle': 0.8}
+
+# 5. Actuators read final values
+V.add(steering, inputs=['angle'])
+V.add(throttle_motor, inputs=['throttle'])
+```
+
+## Best Practices
+
+### Naming Conventions
+
+Use descriptive names with component prefixes:
+
+```python
+# Good
+mem.put(['cam/image_array'], image)
+mem.put(['user/angle'], 0.5)
+mem.put(['pilot/throttle'], 0.8)
+
+# Avoid
+mem.put(['img'], image)  # Too short
+mem.put(['x'], 0.5)      # Not descriptive
+```
+
+### Handling None Values
+
+Always check for None when reading from memory:
+
+```python
+class MyPart:
+    def run(self, angle, throttle):
+        # Check for None values
+        angle = angle if angle is not None else 0.0
+        throttle = throttle if throttle is not None else 0.0
+        
+        # Process values
+        return angle * 2, throttle
+```
+
+### Memory Inspection
+
+Debug memory contents during development:
+
+```python
+# Print all memory contents
+for key, value in V.mem.items():
+    print(f"{key}: {value}")
+
+# Check if key exists
+if 'pilot/angle' in V.mem.d:
+    print("Pilot data available")
+```
+
+## See Also
+
+- [Vehicle](/api/vehicle) - Main vehicle class that uses Memory
+- [Creating Parts](/parts/custom-parts) - How parts interact with memory
+- [Data Store](/parts/data-stores) - Persistent storage for training data

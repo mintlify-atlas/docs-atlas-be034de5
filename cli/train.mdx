@@ -1,0 +1,299 @@
+---
+title: donkey train
+description: Train neural network models from recorded driving data
+---
+
+The `donkey train` command trains a neural network model using data collected from manual driving sessions. The trained model can then be used for autonomous driving.
+
+## Usage
+
+```bash
+donkey train [options]
+```
+
+## Options
+
+<ParamField path="--tub" type="string[]" required>
+  Path(s) to tub directories containing training data. Multiple tubs can be specified:
+  ```bash
+  --tub ./data/tub_1 ./data/tub_2 ./data/tub_3
+  ```
+</ParamField>
+
+<ParamField path="--model" type="string">
+  Output path and filename for the trained model. Example: `./models/pilot.h5`
+  
+  If not specified, a default name will be generated based on the model type and timestamp.
+</ParamField>
+
+<ParamField path="--type" type="string">
+  Model architecture type to use for training. Common types:
+  - `linear`: Simple linear model (fastest, least accurate)
+  - `categorical`: Categorical output model
+  - `inferred`: Model with inferred steering
+  - `latent`: Latent space model
+  
+  If not specified, uses `DEFAULT_MODEL_TYPE` from config.
+</ParamField>
+
+<ParamField path="--config" type="string" default="./config.py">
+  Location of the config file to use. Default is `./config.py` in the current directory.
+</ParamField>
+
+<ParamField path="--myconfig" type="string" default="./myconfig.py">
+  Location of your custom config overrides file. Default is `./myconfig.py`.
+</ParamField>
+
+<ParamField path="--framework" type="string" default="tensorflow">
+  AI framework to use for training:
+  - `tensorflow`: TensorFlow/Keras (default)
+  - `pytorch`: PyTorch
+  
+  If not specified, uses `DEFAULT_AI_FRAMEWORK` from config.
+</ParamField>
+
+<ParamField path="--checkpoint" type="string">
+  Path to a checkpoint file to resume training from (PyTorch only).
+</ParamField>
+
+<ParamField path="--transfer" type="string">
+  Path to a pre-trained model to use as a starting point (transfer learning). The model will start with these weights and fine-tune on your data.
+</ParamField>
+
+<ParamField path="--comment" type="string">
+  Comment to add to the model database for tracking purposes. Use double quotes for multiple words:
+  ```bash
+  --comment "Training on indoor track data"
+  ```
+</ParamField>
+
+## Training Process
+
+The training process:
+
+1. **Loads data** from specified tub(s)
+2. **Preprocesses images** and normalizes inputs
+3. **Splits data** into training and validation sets
+4. **Trains the model** using the specified architecture
+5. **Saves the trained model** to the output path
+6. **Records training history** in the model database
+
+## Examples
+
+### Basic training with one tub
+
+```bash
+donkey train --tub ./data/tub_1_20-03-15 --model ./models/pilot.h5
+```
+
+### Train with multiple tubs
+
+```bash
+donkey train --tub ./data/tub_1 ./data/tub_2 ./data/tub_3 --model ./models/multi_tub.h5
+```
+
+### Train with specific model type
+
+```bash
+donkey train --tub ./data/tub_1 --model ./models/pilot.h5 --type linear
+```
+
+### Use PyTorch instead of TensorFlow
+
+```bash
+donkey train --tub ./data/tub_1 --model ./models/pilot.h5 --framework pytorch
+```
+
+### Resume training from checkpoint (PyTorch)
+
+```bash
+donkey train --tub ./data/tub_1 --model ./models/pilot.h5 \
+  --framework pytorch --checkpoint ./models/checkpoint_epoch_10.pth
+```
+
+### Transfer learning from existing model
+
+```bash
+donkey train --tub ./data/new_track --model ./models/new_track_pilot.h5 \
+  --transfer ./models/pilot.h5
+```
+
+### Add a comment for tracking
+
+```bash
+donkey train --tub ./data/tub_1 --model ./models/pilot.h5 \
+  --comment "First training session on outdoor track"
+```
+
+### Use custom config file
+
+```bash
+donkey train --tub ./data/tub_1 --model ./models/pilot.h5 \
+  --config ./custom_config.py --myconfig ./my_overrides.py
+```
+
+## Training Output Example
+
+```
+Using TensorFlow backend
+Loading tubs from paths: ./data/tub_1
+Tub 1: 2,487 records
+Total records: 2,487
+Training records: 1,989
+Validation records: 498
+
+Model type: linear
+Input shape: (120, 160, 3)
+Output: angle, throttle
+
+Training...
+Epoch 1/100
+62/62 [==============================] - 8s 125ms/step - loss: 0.0856 - angle_loss: 0.0421 - throttle_loss: 0.0435 - val_loss: 0.0234
+Epoch 2/100
+62/62 [==============================] - 7s 118ms/step - loss: 0.0198 - angle_loss: 0.0098 - throttle_loss: 0.0100 - val_loss: 0.0156
+...
+Epoch 35/100
+62/62 [==============================] - 7s 117ms/step - loss: 0.0045 - angle_loss: 0.0021 - throttle_loss: 0.0024 - val_loss: 0.0123
+
+Stopped early on epoch: 35
+Saving model: ./models/pilot.h5
+Model saved.
+```
+
+## Configuration Options
+
+Key configuration parameters in `config.py` / `myconfig.py`:
+
+```python
+# Model settings
+DEFAULT_MODEL_TYPE = 'linear'
+DEFAULT_AI_FRAMEWORK = 'tensorflow'
+
+# Training settings
+BATCH_SIZE = 128
+TRAIN_TEST_SPLIT = 0.8
+MAX_EPOCHS = 100
+SHOW_PLOT = True
+VERBOSE_TRAIN = True
+
+# Image settings
+IMAGE_W = 160
+IMAGE_H = 120
+IMAGE_DEPTH = 3
+
+# Model behavior
+MIN_STEERING = -1.0
+MAX_STEERING = 1.0
+MIN_THROTTLE = -1.0
+MAX_THROTTLE = 1.0
+
+# Early stopping
+EARLY_STOP_PATIENCE = 5
+MIN_DELTA = 0.0005
+```
+
+## Model Types
+
+### Linear Model
+Simple fully-connected network. Fast training, good for simple tracks.
+
+```bash
+donkey train --tub ./data/tub_1 --model ./models/pilot.h5 --type linear
+```
+
+### Categorical Model
+Outputs discrete steering categories instead of continuous values.
+
+```bash
+donkey train --tub ./data/tub_1 --model ./models/pilot.h5 --type categorical
+```
+
+### Custom Models
+You can define custom model architectures in your config file.
+
+## Transfer Learning
+
+Transfer learning allows you to start with a pre-trained model and fine-tune it on new data:
+
+```bash
+donkey train --tub ./data/new_track --model ./models/new_pilot.h5 \
+  --transfer ./models/old_pilot.h5
+```
+
+**Benefits:**
+- Faster training time
+- Better performance with less data
+- Leverage knowledge from previous tracks
+
+**Use cases:**
+- Training on a new track similar to previous tracks
+- Adapting to different lighting conditions
+- Fine-tuning for specific sections of a track
+
+## Tips for Better Training
+
+### Data Collection
+
+1. **Quantity**: Collect at least 10-20 laps of good driving data
+2. **Quality**: Drive smoothly and consistently
+3. **Diversity**: Include various scenarios (straight, curves, lighting)
+4. **Recovery**: Include recovery maneuvers from edge positions
+
+### Training Strategy
+
+1. **Start simple**: Begin with a linear model to verify your pipeline
+2. **Monitor validation loss**: Watch for overfitting (validation loss increasing while training loss decreases)
+3. **Use early stopping**: Configured via `EARLY_STOP_PATIENCE` in config
+4. **Experiment with augmentation**: Enable data augmentation in config
+
+### Data Augmentation
+
+Enable augmentation in your config to increase training data diversity:
+
+```python
+# In myconfig.py
+AUG_FLIP_HORIZONTAL = True
+AUG_CROP_CHANCE = 0.8
+AUG_CROP_TOP = 0.2
+AUG_BLUR_CHANCE = 0.2
+AUG_BRIGHTNESS_RANGE = (0.5, 1.5)
+```
+
+## Troubleshooting
+
+### Low accuracy / High validation loss
+
+- Collect more diverse training data
+- Try a more complex model architecture
+- Enable data augmentation
+- Verify calibration values are correct
+
+### Overfitting (validation loss increasing)
+
+- Reduce model complexity
+- Enable data augmentation
+- Collect more diverse data
+- Reduce number of epochs
+
+### Out of memory errors
+
+- Reduce `BATCH_SIZE` in config
+- Reduce image resolution (`IMAGE_W`, `IMAGE_H`)
+- Close other applications
+- Use a machine with more RAM/GPU memory
+
+### Model file not found
+
+- Ensure the `models/` directory exists
+- Check file path is correct and absolute
+- Verify write permissions
+
+## Next Steps
+
+After training:
+
+1. **Test your model**: Use [`donkey tubplot`](/cli/tubplot) to visualize predictions
+2. **Create a video**: Use [`donkey makemovie`](/cli/makemovie) to see model performance
+3. **Run autonomous mode**: Test on your car with `python manage.py drive --model ./models/pilot.h5`
+4. **Iterate**: Collect more data where the model struggles and retrain
+5. **Track models**: Use `donkey models` to view your model database

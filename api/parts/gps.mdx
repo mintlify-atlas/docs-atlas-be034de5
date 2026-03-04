@@ -1,0 +1,399 @@
+---
+title: GPS Parts API
+description: GPS location tracking and waypoint navigation
+---
+
+GPS parts provide location tracking using NMEA GPS receivers and waypoint-based navigation.
+
+## GPS Position Reading
+
+### GpsNmeaPositions
+
+Converts NMEA sentences to UTM positions.
+
+**Constructor:**
+
+```python
+GpsNmeaPositions(debug=False)
+```
+
+<ParamField path="debug" type="bool" default="false">
+  Enable debug logging
+</ParamField>
+
+**Methods:**
+
+<ParamField path="run" type="(lines: list) -> list">
+  Convert list of (timestamp, nmea_sentence) tuples to (timestamp, x, y) positions in UTM coordinates
+</ParamField>
+
+<ParamField path="run_threaded" type="(lines: list) -> list">
+  Threaded version of run()
+</ParamField>
+
+**Output:** List of tuples `(timestamp, easting, northing)` in UTM meters
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.gps import GpsNmeaPositions
+
+gps_reader = GpsNmeaPositions(debug=True)
+
+# Process NMEA sentences
+nmea_lines = [
+    (1234567890, '$GPRMC,003918.00,A,3806.92281,N,12235.64362,W,0.090,,060322,,,D*67')
+]
+
+positions = gps_reader.run(nmea_lines)
+# Returns: [(1234567890, 546789.12, 4215432.56)]
+```
+
+### GpsLatestPosition
+
+Returns the most recent valid GPS position.
+
+**Constructor:**
+
+```python
+GpsLatestPosition(debug=False)
+```
+
+**Methods:**
+
+<ParamField path="run" type="(positions: list) -> tuple">
+  Returns the last position from the list, or None if empty
+</ParamField>
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.gps import GpsLatestPosition
+
+latest = GpsLatestPosition()
+position = latest.run(positions)
+# Returns: (timestamp, x, y)
+```
+
+### GpsPosition
+
+Complete GPS part that reads serial NMEA and outputs position.
+
+**Constructor:**
+
+```python
+GpsPosition(serial, debug=False)
+```
+
+<ParamField path="serial" type="SerialPort">
+  Serial port connected to GPS module
+</ParamField>
+
+<ParamField path="debug" type="bool" default="false">
+  Enable debug logging
+</ParamField>
+
+**Methods:**
+
+<ParamField path="run" type="() -> tuple">
+  Returns current position (timestamp, x, y) in UTM meters
+</ParamField>
+
+<ParamField path="run_threaded" type="() -> tuple">
+  Returns cached position from update thread
+</ParamField>
+
+<ParamField path="update" type="() -> None">
+  Continuously reads GPS in background thread
+</ParamField>
+
+<ParamField path="shutdown" type="() -> None">
+  Stop GPS reading
+</ParamField>
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.gps import GpsPosition
+from donkeycar.parts.serial_port import SerialPort
+
+# Create serial connection
+serial_port = SerialPort('/dev/ttyUSB0', baudrate=9600)
+
+# Create GPS part
+gps = GpsPosition(serial_port, debug=True)
+
+# Add to vehicle (threaded)
+V.add(gps,
+      outputs=['gps/timestamp', 'gps/x', 'gps/y'],
+      threaded=True)
+```
+
+## GPS Playback
+
+### GpsPlayer
+
+Replays recorded GPS NMEA sentences.
+
+**Constructor:**
+
+```python
+GpsPlayer(nmea_logger)
+```
+
+<ParamField path="nmea_logger" type="CsvLogger">
+  CSV logger containing recorded NMEA sentences
+</ParamField>
+
+**Methods:**
+
+<ParamField path="start" type="() -> GpsPlayer">
+  Start playback
+</ParamField>
+
+<ParamField path="stop" type="() -> GpsPlayer">
+  Stop playback
+</ParamField>
+
+<ParamField path="run" type="(playing: bool, nmea_sentences: list) -> (bool, list)">
+  Play recorded NMEA if playing=True, otherwise pass through live NMEA
+</ParamField>
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.gps import GpsPlayer
+from donkeycar.parts.text_writer import CsvLogger
+
+# Load recorded NMEA data
+nmea_log = CsvLogger('data/gps_log.csv')
+
+# Create player
+player = GpsPlayer(nmea_log)
+player.start()
+
+# Use in vehicle loop
+playing, nmea = player.run(playing=True, nmea_sentences=[])
+```
+
+## NMEA Parsing
+
+### parseGpsPosition
+
+Low-level function to parse NMEA sentence to position.
+
+**Function:**
+
+```python
+parseGpsPosition(line, debug=False)
+```
+
+<ParamField path="line" type="str">
+  NMEA sentence string
+</ParamField>
+
+<ParamField path="debug" type="bool" default="false">
+  Enable debug output
+</ParamField>
+
+**Returns:** `(longitude, latitude)` tuple in UTM meters, or None if invalid
+
+**Supported Messages:**
+- `GPRMC`: GPS Recommended Minimum
+- `GNRMC`: GNSS Recommended Minimum
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.gps import parseGpsPosition
+
+nmea = '$GPRMC,003918.00,A,3806.92281,N,12235.64362,W,0.090,,060322,,,D*67'
+position = parseGpsPosition(nmea)
+# Returns: (546789.12, 4215432.56)
+```
+
+### Utility Functions
+
+<ParamField path="parse_nmea_checksum" type="(nmea_line: str) -> int">
+  Extract checksum from NMEA sentence
+</ParamField>
+
+<ParamField path="calculate_nmea_checksum" type="(nmea_line: str) -> int">
+  Calculate checksum for NMEA sentence validation
+</ParamField>
+
+<ParamField path="nmea_to_degrees" type="(gps_str: str, direction: str) -> float">
+  Convert NMEA coordinate format (DDDMM.MMMMM) to decimal degrees
+</ParamField>
+
+## Coordinate Systems
+
+### NMEA Format
+
+GPS coordinates in NMEA sentences use:
+- **Latitude**: DDMM.MMMMM (degrees + minutes)
+- **Longitude**: DDDMM.MMMMM (degrees + minutes)
+- **Direction**: N/S for latitude, E/W for longitude
+
+**Example:** `3806.92281,N` = 38° 06.92281' N
+
+### UTM Coordinates
+
+Donkeycar converts GPS positions to UTM (Universal Transverse Mercator):
+- **Easting (X)**: Meters east from zone origin
+- **Northing (Y)**: Meters north from equator
+- **Advantages**: Cartesian coordinates in meters, easier for navigation
+
+**Conversion:**
+```python
+import utm
+
+# Convert lat/lon to UTM
+easting, northing, zone_num, zone_letter = utm.from_latlon(latitude, longitude)
+```
+
+## Serial Connection
+
+### Required Hardware
+
+- GPS module with UART/serial output (e.g., u-blox, Adafruit GPS)
+- USB-to-serial adapter or direct UART connection
+
+### Connection Setup
+
+```python
+from donkeycar.parts.serial_port import SerialPort
+
+serial_port = SerialPort(
+    port='/dev/ttyUSB0',  # or '/dev/ttyAMA0' for Pi UART
+    baudrate=9600,
+    timeout=1.0
+)
+```
+
+## Configuration
+
+Typical GPS configuration in `myconfig.py`:
+
+```python
+# GPS Settings
+GPS_SERIAL_PORT = '/dev/ttyUSB0'
+GPS_BAUDRATE = 9600
+GPS_TIMEOUT = 1.0
+GPS_DEBUG = False
+
+# Recording
+RECORD_GPS = True
+```
+
+## Integration Example
+
+### Basic GPS Logging
+
+```python
+from donkeycar.parts.gps import GpsPosition
+from donkeycar.parts.serial_port import SerialPort
+
+# Setup GPS
+serial_port = SerialPort(
+    port=cfg.GPS_SERIAL_PORT,
+    baudrate=cfg.GPS_BAUDRATE,
+    timeout=cfg.GPS_TIMEOUT
+)
+
+gps = GpsPosition(serial_port, debug=cfg.GPS_DEBUG)
+
+# Add to vehicle
+V.add(gps,
+      outputs=['gps/timestamp', 'gps/x', 'gps/y'],
+      threaded=True)
+
+# Record GPS data
+if cfg.RECORD_GPS:
+    inputs.extend(['gps/timestamp', 'gps/x', 'gps/y'])
+    types.extend(['float', 'float', 'float'])
+```
+
+### GPS-Based Navigation
+
+```python
+import numpy as np
+
+class GpsNavigator:
+    def __init__(self, waypoints):
+        """
+        waypoints: list of (x, y) UTM coordinates
+        """
+        self.waypoints = waypoints
+        self.current_waypoint = 0
+        self.waypoint_threshold = 5.0  # meters
+    
+    def run(self, gps_x, gps_y):
+        if self.current_waypoint >= len(self.waypoints):
+            return 0.0, 0.0  # Done
+        
+        # Get current waypoint
+        target_x, target_y = self.waypoints[self.current_waypoint]
+        
+        # Calculate distance
+        dx = target_x - gps_x
+        dy = target_y - gps_y
+        distance = np.sqrt(dx**2 + dy**2)
+        
+        # Check if reached waypoint
+        if distance < self.waypoint_threshold:
+            self.current_waypoint += 1
+            if self.current_waypoint >= len(self.waypoints):
+                return 0.0, 0.0
+            target_x, target_y = self.waypoints[self.current_waypoint]
+            dx = target_x - gps_x
+            dy = target_y - gps_y
+        
+        # Calculate steering angle to target
+        angle = np.arctan2(dy, dx)
+        
+        return angle, 0.3  # Return angle and constant throttle
+
+# Add to vehicle
+waypoints = [(x1, y1), (x2, y2), (x3, y3)]
+nav = GpsNavigator(waypoints)
+
+V.add(nav,
+      inputs=['gps/x', 'gps/y'],
+      outputs=['pilot/angle', 'pilot/throttle'])
+```
+
+## Troubleshooting
+
+### No GPS Fix
+
+**Symptoms:** Position returns None or (0, 0)
+
+**Solutions:**
+1. Ensure GPS has clear view of sky
+2. Wait for GPS to acquire satellites (can take 1-5 minutes)
+3. Check NMEA sentences contain 'A' (valid) not 'V' (warning)
+4. Verify antenna connection
+
+### Serial Connection Issues
+
+**Symptoms:** No data from serial port
+
+**Solutions:**
+1. Check device path: `ls /dev/ttyUSB*` or `ls /dev/ttyAMA*`
+2. Verify baudrate matches GPS module (usually 9600)
+3. Check serial permissions: `sudo usermod -a -G dialout $USER`
+4. Test with: `cat /dev/ttyUSB0`
+
+### Coordinate Accuracy
+
+**Note:** GPS accuracy is typically 2-10 meters for consumer modules. For better accuracy:
+- Use RTK GPS modules
+- Implement differential GPS
+- Filter positions with Kalman filter
+
+## Requirements
+
+```bash
+pip install pyserial utm pynmea2
+```

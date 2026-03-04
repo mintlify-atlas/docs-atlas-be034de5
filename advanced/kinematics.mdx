@@ -1,0 +1,427 @@
+---
+title: "Kinematics Models"
+description: "Unicycle, bicycle, and differential drive kinematics for pose estimation and control"
+---
+
+Kinematics models convert between wheel velocities and vehicle pose (position and orientation). Donkeycar supports multiple kinematic models for different robot configurations.
+
+## Overview
+
+Kinematics models enable:
+- **Pose estimation** - Calculate position from wheel encoders
+- **Velocity control** - Convert desired motion to wheel speeds  
+- **Path following** - Navigate using GPS or visual odometry
+- **Differential drive** - Control two-wheeled robots
+- **Ackermann steering** - Model car-like vehicles
+
+## Coordinate Systems
+
+### Pose Representation
+
+```python
+class Pose2D:
+    def __init__(self, x=0.0, y=0.0, angle=0.0):
+        self.x = x        # horizontal position (meters)
+        self.y = y        # vertical position (meters)  
+        self.angle = angle  # orientation (radians)
+```
+
+From `donkeycar/parts/kinematics.py:24-28`.
+
+### Angle Normalization
+
+```python
+def limit_angle(angle):
+    """Limit angle to pi to -pi radians"""
+    return math.atan2(math.sin(angle), math.cos(angle))
+```
+
+From `donkeycar/parts/kinematics.py:11-15`.
+
+## Unicycle Model
+
+The unicycle model represents differential drive robots with two independently driven wheels.
+
+### Forward Kinematics
+
+Convert wheel distances to pose:
+
+```python
+from donkeycar.parts.kinematics import Unicycle
+
+# Robot with 0.15m between wheels
+unicycle = Unicycle(axle_length=0.15)
+
+# Update with wheel encoder readings
+left_distance = 0.5  # meters
+right_distance = 0.6  # meters
+timestamp = time.time()
+
+# Returns: distance, velocity, x, y, angle,
+#          x_velocity, y_velocity, angular_velocity, timestamp
+result = unicycle.run(left_distance, right_distance, timestamp)
+
+distance, velocity, x, y, angle, vx, vy, omega, ts = result
+```
+
+From `donkeycar/parts/kinematics.py:303-408`.
+
+### Implementation Details
+
+The update equations from `donkeycar/parts/kinematics.py:361-376`:
+
+```python
+# Changes from last update
+delta_left_distance = left_distance - self.left_distance
+delta_right_distance = right_distance - self.right_distance
+delta_distance = (delta_left_distance + delta_right_distance) / 2
+delta_angle = (delta_right_distance - delta_left_distance) / self.axle_length
+delta_time = timestamp - self.timestamp
+
+forward_velocity = delta_distance / delta_time
+angle_velocity = delta_angle / delta_time
+
+# New position and orientation
+estimated_angle = limit_angle(self.pose.angle + delta_angle / 2)
+x = self.pose.x + delta_distance * math.cos(estimated_angle)
+y = self.pose.y + delta_distance * math.sin(estimated_angle)
+angle = limit_angle(self.pose.angle + delta_angle)
+```
+
+### Inverse Kinematics
+
+Convert desired velocity to wheel speeds:
+
+```python
+from donkeycar.parts.kinematics import InverseUnicycle
+
+inverse = InverseUnicycle(
+    axle_length=0.15,
+    wheel_radius=0.0315,
+    min_speed=0.1,
+    max_speed=3.0
+)
+
+# Desired motion
+forward_velocity = 1.0  # m/s
+angular_velocity = 0.5  # rad/s
+
+# Convert to wheel speeds
+left_speed, right_speed, timestamp = inverse.run(
+    forward_velocity, 
+    angular_velocity
+)
+```
+
+From `donkeycar/parts/kinematics.py:415-458`.
+
+The conversion formula from `donkeycar/parts/kinematics.py:451-452`:
+
+```python
+left_linear_speed = forward_velocity - angular_velocity * self.axle_length / 2
+right_linear_speed = forward_velocity + angular_velocity * self.axle_length / 2
+```
+
+## Bicycle Model
+
+The bicycle model represents car-like vehicles with Ackermann steering.
+
+### Forward Kinematics
+
+```python
+from donkeycar.parts.kinematics import Bicycle
+
+# Car with 0.3m wheelbase
+bicycle = Bicycle(wheel_base=0.3)
+
+# Update with encoder and steering
+forward_distance = 1.0  # meters traveled
+steering_angle = 0.2    # radians (left positive)
+timestamp = time.time()
+
+# Returns: distance, velocity, x, y, angle,
+#          x_velocity, y_velocity, angular_velocity, timestamp  
+result = bicycle.run(forward_distance, steering_angle, timestamp)
+```
+
+From `donkeycar/parts/kinematics.py:31-163`.
+
+### Angular Velocity
+
+For car-like vehicles:
+
+```python
+def bicycle_angular_velocity(wheel_base, forward_velocity, steering_angle):
+    """Calculate angular velocity from steering angle"""
+    return forward_velocity * math.sin(steering_angle) / wheel_base
+```
+
+From `donkeycar/parts/kinematics.py:262-274`.
+
+### Inverse Kinematics
+
+Convert desired motion to steering angle:
+
+```python
+from donkeycar.parts.kinematics import InverseBicycle
+
+inverse = InverseBicycle(wheel_base=0.3)
+
+# Desired motion
+forward_velocity = 2.0  # m/s
+angular_velocity = 0.3  # rad/s
+
+# Convert to steering angle
+velocity, steering_angle, timestamp = inverse.run(
+    forward_velocity,
+    angular_velocity
+)
+```
+
+From `donkeycar/parts/kinematics.py:169-208`.
+
+The conversion from `donkeycar/parts/kinematics.py:246-259`:
+
+```python
+def bicycle_steering_angle(wheel_base, forward_velocity, angular_velocity):
+    """Calculate steering angle from angular velocity"""
+    # Derivation from bicycle model:
+    # angular_velocity = forward_velocity * tan(steering_angle) / wheel_base
+    # steering_angle = atan(angular_velocity * wheel_base / forward_velocity)
+    return limit_angle(math.asin(angular_velocity * wheel_base / forward_velocity))
+```
+
+## Differential Drive Control
+
+Convert steering and throttle to left/right wheel speeds:
+
+```python
+from donkeycar.parts.kinematics import TwoWheelSteeringThrottle
+
+# Create converter
+converter = TwoWheelSteeringThrottle(steering_zero=0.01)
+
+# Convert controls
+throttle = 0.5   # -1 to 1
+steering = -0.3  # -1 (left) to 1 (right)
+
+left_throttle, right_throttle = converter.run(throttle, steering)
+```
+
+From `donkeycar/parts/kinematics.py:656-677`.
+
+The algorithm from `donkeycar/parts/kinematics.py:645-653`:
+
+```python
+left_throttle = throttle
+right_throttle = throttle
+
+if steering < -steering_zero:
+    left_throttle *= (1.0 + steering)
+elif steering > steering_zero:
+    right_throttle *= (1.0 - steering)
+
+return left_throttle, right_throttle
+```
+
+## Normalization
+
+### Steering Angle Normalization
+
+Convert between radians and normalized -1 to 1:
+
+```python
+from donkeycar.parts.kinematics import (
+    NormalizeSteeringAngle,
+    UnnormalizeSteeringAngle
+)
+
+# Configure for your vehicle
+max_angle = math.pi / 4  # 45 degrees
+
+# Radians to normalized
+normalizer = NormalizeSteeringAngle(
+    max_steering_angle=max_angle,
+    steering_zero=0.01  # deadzone
+)
+normalized = normalizer.run(0.5)  # 0.5 radians -> normalized
+
+# Normalized to radians  
+unnormalizer = UnnormalizeSteeringAngle(
+    max_steering_angle=max_angle,
+    steering_zero=0.01
+)
+radians = unnormalizer.run(-0.5)  # -0.5 normalized -> radians
+```
+
+From `donkeycar/parts/kinematics.py:521-597`.
+
+### Angular Velocity Normalization
+
+For bicycle (car-like) vehicles:
+
+```python
+from donkeycar.parts.kinematics import (
+    BicycleNormalizeAngularVelocity,
+    BicycleUnnormalizeAngularVelocity
+)
+
+# Robot specifications
+wheel_base = 0.3
+max_velocity = 3.0
+max_steering = math.pi / 4
+
+# Normalize
+normalizer = BicycleNormalizeAngularVelocity(
+    wheel_base, max_velocity, max_steering
+)
+normalized = normalizer.run(1.5)  # rad/s -> -1 to 1
+
+# Unnormalize
+unnormalizer = BicycleUnnormalizeAngularVelocity(
+    wheel_base, max_velocity, max_steering
+)
+rad_per_sec = unnormalizer.run(0.75)  # -1 to 1 -> rad/s
+```
+
+For unicycle (differential drive) vehicles:
+
+```python
+from donkeycar.parts.kinematics import (
+    UnicycleNormalizeAngularVelocity,
+    UnicycleUnnormalizeAngularVelocity
+)
+
+wheel_radius = 0.0315
+axle_length = 0.15
+max_velocity = 3.0
+
+# Normalize
+normalizer = UnicycleNormalizeAngularVelocity(
+    wheel_radius, axle_length, max_velocity
+)
+
+# Unnormalize
+unnormalizer = UnicycleUnnormalizeAngularVelocity(
+    wheel_radius, axle_length, max_velocity
+)
+```
+
+From `donkeycar/parts/kinematics.py:277-518`.
+
+## Configuration
+
+Measure your robot's physical parameters:
+
+```python
+# myconfig.py
+
+# MEASURED ROBOT PROPERTIES
+AXLE_LENGTH = 0.15      # Distance between left/right wheels (m)
+WHEEL_BASE = 0.3        # Distance between front/back wheels (m)  
+WHEEL_RADIUS = 0.0315   # Wheel radius (m)
+MIN_SPEED = 0.1         # Minimum speed before stalling (m/s)
+MAX_SPEED = 3.0         # Maximum speed at full throttle (m/s)
+MAX_STEERING_ANGLE = math.pi / 4  # Maximum steering angle (rad)
+
+# ENCODER
+ENCODER_PPR = 20        # Pulses per revolution
+MM_PER_TICK = WHEEL_RADIUS * 2 * math.pi * 1000 / ENCODER_PPR
+```
+
+From `donkeycar/templates/cfg_path_follow.py:66-75`.
+
+## Example: Path Following
+
+Combine kinematics with path following:
+
+```python
+import donkeycar as dk
+from donkeycar.parts.kinematics import Bicycle, TwoWheelSteeringThrottle
+
+V = dk.vehicle.Vehicle()
+
+# Add kinematics
+if cfg.DRIVE_TRAIN_TYPE.startswith("DC_TWO_WHEEL"):
+    # Differential drive
+    V.add(TwoWheelSteeringThrottle(),
+          inputs=['throttle', 'steering'],
+          outputs=['left/throttle', 'right/throttle'])
+else:
+    # Car-like vehicle with bicycle model
+    bicycle = Bicycle(wheel_base=cfg.WHEEL_BASE)
+    V.add(bicycle,
+          inputs=['enc/distance', 'user/angle', 'timestamp'],
+          outputs=['odom/distance', 'odom/velocity',
+                   'pos/x', 'pos/y', 'pos/angle',
+                   'vel/x', 'vel/y', 'vel/angular',
+                   'timestamp'])
+```
+
+## Utility Functions
+
+### Wheel Rotational Velocity
+
+```python
+from donkeycar.parts.kinematics import wheel_rotational_velocity
+
+wheel_radius = 0.0315  # meters
+linear_speed = 2.0     # m/s
+
+# Convert to rad/s
+rad_per_sec = wheel_rotational_velocity(wheel_radius, linear_speed)
+```
+
+From `donkeycar/parts/kinematics.py:600-610`.
+
+### Unicycle Angular Velocity
+
+```python
+from donkeycar.parts.kinematics import unicycle_angular_velocity
+
+wheel_radius = 0.0315
+axle_length = 0.15
+left_velocity = 1.0
+right_velocity = 1.2
+
+omega = unicycle_angular_velocity(
+    wheel_radius, axle_length,
+    left_velocity, right_velocity
+)
+```
+
+From `donkeycar/parts/kinematics.py:463-492`.
+
+## Best Practices
+
+1. **Measure carefully** - Accurate physical parameters are critical
+2. **Calibrate encoders** - Roll car exactly 1 meter, measure ticks
+3. **Test in place** - Verify rotation before translating
+4. **Handle singularities** - Check for division by zero
+5. **Use small timesteps** - Assumes linear motion between updates
+
+## Troubleshooting
+
+### Pose Drift
+
+- Verify encoder tick counts match actual distance
+- Check wheel slippage
+- Calibrate wheel radius and axle length
+
+### Incorrect Rotation
+
+- Verify axle_length measurement
+- Check encoder wiring (left/right swap)
+- Test steering angle sign convention
+
+### Unstable Control
+
+- Add deadzone for small velocities
+- Smooth encoder readings
+- Limit maximum angular velocity
+
+## Next Steps
+
+- Implement [path following](/advanced/path-following) with kinematics
+- Add [telemetry](/advanced/telemetry) to monitor pose
+- Use [simulator](/advanced/simulator) to test kinematics models

@@ -1,0 +1,437 @@
+---
+title: Calibrating Your Car
+description: Find the correct PWM values for steering and throttle to ensure your car responds accurately
+---
+
+## Overview
+
+Calibration is the process of finding the correct PWM (Pulse Width Modulation) pulse values that make your car's steering servo and ESC (Electronic Speed Controller) respond properly to commands. Without proper calibration, your car may not steer correctly or may have incorrect throttle response.
+
+## Why Calibration Matters
+
+- **Steering accuracy**: Ensures the car steers the correct amount for each input
+- **Throttle control**: Sets proper stopped, forward, and reverse speeds
+- **Safety**: Prevents unexpected behavior during autonomous driving
+- **Training quality**: Accurate control produces better training data
+
+## Understanding PWM Values
+
+### What is PWM?
+
+PWM controls servos and ESCs using electrical pulses:
+
+- **Standard servo pulses**: 1ms (full reverse) to 2ms (full forward)
+- **Neutral position**: 1.5ms (centered/stopped)
+- **Frequency**: Typically 50-60Hz (every 16-20ms)
+
+### PWM in Donkeycar
+
+Donkeycar uses 12-bit PWM values (0-4095) based on the PCA9685 controller:
+
+- **Typical range**: 200-500 for most servos/ESCs
+- **Neutral**: ~370 (varies by hardware)
+- **Left/Forward**: ~460-500
+- **Right/Reverse**: ~220-290
+
+<Warning>
+These are example values. Your hardware will have different values. Never use values from examples without testing - always calibrate for your specific hardware.
+</Warning>
+
+## Calibration Methods
+
+Donkeycar provides two calibration approaches:
+
+1. **Command-line calibration** (`donkey calibrate`): Test individual channels
+2. **Web-based calibration** (`calibrate.py`): Real-time adjustment with visual feedback
+
+## Method 1: Command-Line Calibration
+
+### For PCA9685 Motor Controller
+
+This is the most common setup for Donkeycar.
+
+<Steps>
+
+### Start calibration tool
+
+```bash
+donkey calibrate --channel=0
+```
+
+**Options:**
+- `--channel=<0-15>`: PCA9685 channel number (0 for throttle, 1 for steering)
+- `--address=<0x40>`: I2C address (default: 0x40)
+- `--bus=<1>`: I2C bus number (default: autodetect)
+- `--pwmFreq=<60>`: PWM frequency in Hz (default: 60)
+
+### Test steering (Channel 1)
+
+```bash
+donkey calibrate --channel=1 --bus=1
+```
+
+You'll see:
+```
+init PCA9685 on channel 1 address 0x40 bus 1
+Using PWM freq: 60
+
+Enter a PWM setting to test ('q' for quit) (0-1500):
+```
+
+### Find steering values
+
+Enter PWM values to test the servo:
+
+```
+370   # Start at neutral (should be centered)
+460   # Test left - wheels should turn fully left
+290   # Test right - wheels should turn fully right
+```
+
+**Fine-tune by increments:**
+```
+# If 460 is too far left, try:
+450
+440
+# Keep adjusting until you find the exact full-left position
+```
+
+Record your values:
+- **STEERING_LEFT_PWM**: Full left turn (e.g., 460)
+- **STEERING_RIGHT_PWM**: Full right turn (e.g., 290)
+
+### Test throttle (Channel 0)
+
+```bash
+donkey calibrate --channel=0 --bus=1
+```
+
+<Warning>
+Put your car on a stand or hold it so the wheels don't touch the ground during throttle calibration!
+</Warning>
+
+### Find throttle values
+
+```
+370   # Start at neutral - wheels should NOT spin
+400   # Gradually increase - note when wheels start moving
+500   # Test forward - wheels should spin forward
+220   # Test reverse - wheels should spin backward
+```
+
+**ESC Reverse Setup:**
+
+Many ESCs require a special sequence to enable reverse:
+
+1. Set to neutral (370)
+2. Set to full reverse (220) for 1 second
+3. Return to neutral - reverse is now enabled
+
+Record your values:
+- **THROTTLE_STOPPED_PWM**: Neutral/stopped (e.g., 370)
+- **THROTTLE_FORWARD_PWM**: Maximum forward (e.g., 500)
+- **THROTTLE_REVERSE_PWM**: Maximum reverse (e.g., 220)
+
+### Update myconfig.py
+
+Add your calibrated values:
+
+```python
+PWM_STEERING_THROTTLE = {
+    "PWM_STEERING_PIN": "PCA9685.1:40.1",
+    "PWM_STEERING_SCALE": 1.0,
+    "PWM_STEERING_INVERTED": False,
+    "PWM_THROTTLE_PIN": "PCA9685.1:40.0",
+    "PWM_THROTTLE_SCALE": 1.0,
+    "PWM_THROTTLE_INVERTED": False,
+    "STEERING_LEFT_PWM": 460,      # Your calibrated value
+    "STEERING_RIGHT_PWM": 290,     # Your calibrated value
+    "THROTTLE_FORWARD_PWM": 500,   # Your calibrated value
+    "THROTTLE_STOPPED_PWM": 370,   # Your calibrated value
+    "THROTTLE_REVERSE_PWM": 220,   # Your calibrated value
+}
+```
+
+</Steps>
+
+### For Direct PWM Pins
+
+If using Raspberry Pi GPIO pins directly:
+
+```bash
+donkey calibrate --pwm-pin="RPI_GPIO.BOARD.33"
+```
+
+**Pin format examples:**
+- `RPI_GPIO.BOARD.33`: Board pin numbering
+- `RPI_GPIO.BCM.13`: BCM (Broadcom) numbering
+- `PIGPIO.BCM.13`: Using pigpio daemon
+
+### For Arduino
+
+```bash
+donkey calibrate --arduino --channel=9
+```
+
+Use PWM values in range 0-180 (servo angle in degrees).
+
+## Method 2: Web-Based Calibration
+
+The web interface provides real-time calibration with visual feedback.
+
+<Steps>
+
+### Start calibration server
+
+```bash
+cd ~/mycar
+python calibrate.py drive
+```
+
+### Access web interface
+
+Open your browser to:
+```
+http://<your-car>.local:8887/calibrate
+```
+
+Replace `<your-car>` with your Raspberry Pi's hostname.
+
+### Adjust steering
+
+1. Find the **Steering** section
+2. Click **+** or **-** to adjust left/right values in increments of 10
+3. Observe the servo movement in real-time
+4. Use arrow keys for quick testing:
+   - **Left Arrow**: Test left steering
+   - **Right Arrow**: Test right steering
+
+### Adjust throttle
+
+1. Find the **Throttle** section  
+2. Click **+** or **-** to adjust forward throttle
+3. Press **Up Arrow** to test: runs at full throttle for 5 seconds
+4. Press **Down Arrow** to test reverse briefly
+
+<Warning>
+Ensure your car is on a stand or held off the ground when testing throttle!
+</Warning>
+
+### Save values
+
+The interface shows updated values in the text area. Copy these values to your `myconfig.py`:
+
+```python
+STEERING_LEFT_PWM = 460
+STEERING_RIGHT_PWM = 290  
+THROTTLE_FORWARD_PWM = 500
+THROTTLE_STOPPED_PWM = 370
+```
+
+</Steps>
+
+<Tip>
+The web interface is great for fine-tuning after initial command-line calibration. You can adjust values while seeing the camera feed and car response simultaneously.
+</Tip>
+
+## Configuration for Other Drive Trains
+
+### I2C_SERVO (Legacy PCA9685)
+
+Older configuration style:
+
+```python
+DRIVE_TRAIN_TYPE = "I2C_SERVO"
+STEERING_CHANNEL = 1
+STEERING_LEFT_PWM = 460
+STEERING_RIGHT_PWM = 290
+THROTTLE_CHANNEL = 0  
+THROTTLE_FORWARD_PWM = 500
+THROTTLE_STOPPED_PWM = 370
+THROTTLE_REVERSE_PWM = 220
+PCA9685_I2C_ADDR = 0x40
+PCA9685_I2C_BUSNUM = 1
+```
+
+<Warning>
+`I2C_SERVO` drive train type is deprecated. Use `PWM_STEERING_THROTTLE` for new installations.
+</Warning>
+
+### MM1 (RoboHat MM1)
+
+```bash
+donkey calibrate --channel=1  # for MM1
+```
+
+Configuration:
+```python
+DRIVE_TRAIN_TYPE = "MM1"
+MM1_STEERING_MID = 1500
+MM1_MAX_FORWARD = 2000
+MM1_STOPPED_PWM = 1500
+MM1_MAX_REVERSE = 1000
+```
+
+### Differential Drive
+
+For tank-style steering, calibrate each motor separately:
+
+```python
+DRIVE_TRAIN_TYPE = "DC_TWO_WHEEL"
+DC_TWO_WHEEL = {
+    "LEFT_FWD_DUTY_PIN": "RPI_GPIO.BOARD.18",
+    "LEFT_BWD_DUTY_PIN": "RPI_GPIO.BOARD.16",
+    "RIGHT_FWD_DUTY_PIN": "RPI_GPIO.BOARD.15",
+    "RIGHT_BWD_DUTY_PIN": "RPI_GPIO.BOARD.13",
+}
+```
+
+No PWM pulse calibration needed - uses duty cycle (0.0-1.0).
+
+## Calibration Tips
+
+### Steering
+
+- **Start conservative**: Begin with small steering angles
+- **Check mechanical limits**: Don't force the servo past its physical limits  
+- **Test both directions**: Ensure equal response left and right
+- **Watch for binding**: Wheels should move freely without catching
+
+### Throttle
+
+- **Find true neutral**: Wheels should not move at all when stopped
+- **Gradual acceleration**: Find the minimum PWM where wheels just start moving
+- **ESC calibration**: Some ESCs need their own calibration procedure (check manual)
+- **Reverse setup**: Test that reverse works after enabling it
+
+### Common PWM Ranges
+
+**Steering servo (typical):**
+- Left: 420-500
+- Center: 350-380
+- Right: 220-300
+
+**ESC throttle (typical):**
+- Forward: 400-550  
+- Neutral: 350-380
+- Reverse: 200-280
+
+<Tip>
+These ranges vary widely by manufacturer. Always calibrate your specific hardware.
+</Tip>
+
+## Testing Calibration
+
+### Test steering
+
+```bash
+cd ~/mycar
+python manage.py drive
+```
+
+Access the web interface at `http://<your-car>.local:8887`
+
+1. Set mode to **User**
+2. Move the steering slider left/right
+3. Verify wheels turn to full lock in both directions
+4. Check that center position is straight
+
+### Test throttle
+
+1. **Lift car off ground**
+2. Set mode to **User**  
+3. Gradually increase throttle slider
+4. Verify:
+   - Wheels don't spin at zero throttle
+   - Smooth acceleration forward
+   - Reverse works (if equipped)
+
+<Warning>
+Always test throttle with car elevated or held. Never test on the ground until you verify neutral/stopped works correctly.
+</Warning>
+
+## Troubleshooting
+
+### Servo jitters or buzzes
+
+**Cause**: Stopped PWM value not at true neutral
+
+**Solution**: Fine-tune `THROTTLE_STOPPED_PWM` in smaller increments:
+```python
+THROTTLE_STOPPED_PWM = 370  # Try 369, 371, 372, etc.
+```
+
+### Steering reversed
+
+**Solution**: Swap the PWM values:
+```python
+"STEERING_LEFT_PWM": 290,   # Was 460
+"STEERING_RIGHT_PWM": 460,  # Was 290
+```
+
+Or use the invert flag:
+```python
+"PWM_STEERING_INVERTED": True,
+```
+
+### Throttle reversed
+
+**Solution**: Swap forward/reverse or use invert flag:
+```python
+"PWM_THROTTLE_INVERTED": True,
+```
+
+### Limited steering range
+
+**Check**:
+1. Servo arm is properly attached (perpendicular at center)
+2. Mechanical linkages aren't binding  
+3. PWM values are at servo's actual limits
+
+**Adjust**: Increase the difference between left/right values
+
+### ESC not responding
+
+**Check**:
+1. ESC is powered (battery connected)
+2. Correct channel (usually 0)
+3. ESC is properly initialized (some need a startup sequence)
+4. PWM frequency matches ESC (typically 60Hz)
+
+### Throttle works but reverse doesn't
+
+**ESCs require reverse activation**:
+1. Set to neutral (stopped PWM)
+2. Set to full reverse for 1-2 seconds  
+3. Return to neutral
+4. Reverse should now work
+
+## Advanced: PWM Frequency Scaling
+
+If using non-standard PWM frequency:
+
+```python
+"PWM_STEERING_SCALE": 1.2,  # Adjust pulse width for different frequency
+```
+
+**Calculation**:
+```
+scale = actual_frequency / 60
+```
+
+For 50Hz: `scale = 50/60 = 0.833`
+For 75Hz: `scale = 75/60 = 1.25`
+
+## Next Steps
+
+Once calibration is complete:
+
+1. **Test drive**: [Learn to drive and collect data](/guides/driving)
+2. **Collect training data**: Drive manually and record good laps  
+3. **Train your model**: Use collected data to train an autopilot
+
+## Additional Resources
+
+- [PWM Servo/ESC Primer](https://learn.adafruit.com/16-channel-pwm-servo-driver/overview)
+- [Understanding PWM](https://learn.sparkfun.com/tutorials/pulse-width-modulation)
+- [PCA9685 Datasheet](https://www.nxp.com/docs/en/data-sheet/PCA9685.pdf)

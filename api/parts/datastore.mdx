@@ -1,0 +1,381 @@
+---
+title: Datastore Parts API
+description: Data recording and tub management APIs
+---
+
+Datastore parts handle recording driving data to tubs and managing tub datasets.
+
+## Tub (v2)
+
+The primary datastore class for recording and reading driving data.
+
+**Constructor:**
+
+```python
+Tub(base_path, inputs=[], types=[], metadata=[], max_catalog_len=1000, read_only=False)
+```
+
+<ParamField path="base_path" type="str">
+  Path to tub directory
+</ParamField>
+
+<ParamField path="inputs" type="list" default="[]">
+  List of input channel names (e.g., ['cam/image_array', 'user/angle'])
+</ParamField>
+
+<ParamField path="types" type="list" default="[]">
+  List of data types corresponding to inputs (e.g., ['image_array', 'float'])
+</ParamField>
+
+<ParamField path="metadata" type="list" default="[]">
+  List of metadata key:value pairs
+</ParamField>
+
+<ParamField path="max_catalog_len" type="int" default="1000">
+  Maximum catalog size before flushing
+</ParamField>
+
+<ParamField path="read_only" type="bool" default="false">
+  Open tub in read-only mode
+</ParamField>
+
+**Supported Data Types:**
+- `'float'`: Floating point numbers
+- `'int'`: Integers
+- `'str'`: Strings
+- `'boolean'`: Boolean values
+- `'image_array'`: NumPy image arrays (saved as JPEG)
+- `'gray16_array'`: 16-bit grayscale images (saved as PNG)
+- `'nparray'`: Generic NumPy arrays (saved as list)
+- `'list'` or `'vector'`: Lists of values
+
+**Methods:**
+
+<ParamField path="write_record" type="(record: dict) -> None">
+  Write a single record to the tub
+</ParamField>
+
+<ParamField path="delete_records" type="(record_indexes: list) -> None">
+  Delete specific records by index
+</ParamField>
+
+<ParamField path="delete_last_n_records" type="(n: int) -> None">
+  Delete the last N records
+</ParamField>
+
+<ParamField path="restore_records" type="(record_indexes: list) -> None">
+  Restore previously deleted records
+</ParamField>
+
+<ParamField path="close" type="() -> None">
+  Close the tub and flush data
+</ParamField>
+
+<ParamField path="__iter__" type="() -> Iterator">
+  Iterate over all records in the tub
+</ParamField>
+
+<ParamField path="__len__" type="() -> int">
+  Get number of records in the tub
+</ParamField>
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.tub_v2 import Tub
+import numpy as np
+
+# Create a new tub
+tub = Tub(
+    base_path='data/tub_1',
+    inputs=['cam/image_array', 'user/angle', 'user/throttle'],
+    types=['image_array', 'float', 'float']
+)
+
+# Write a record
+img = np.random.randint(0, 255, (120, 160, 3), dtype=np.uint8)
+record = {
+    'cam/image_array': img,
+    'user/angle': 0.5,
+    'user/throttle': 0.3
+}
+tub.write_record(record)
+
+# Close when done
+tub.close()
+```
+
+## TubWriter
+
+Donkeycar part for writing records to a tub.
+
+**Constructor:**
+
+```python
+TubWriter(base_path, inputs=[], types=[], metadata=[], max_catalog_len=1000)
+```
+
+<ParamField path="base_path" type="str">
+  Path to tub directory
+</ParamField>
+
+<ParamField path="inputs" type="list">
+  List of input channel names
+</ParamField>
+
+<ParamField path="types" type="list">
+  List of data types
+</ParamField>
+
+<ParamField path="metadata" type="list">
+  Metadata key:value pairs
+</ParamField>
+
+**Methods:**
+
+<ParamField path="run" type="(*args) -> int">
+  Donkeycar part interface. Accepts values matching inputs list and writes record. Returns current record index.
+</ParamField>
+
+<ParamField path="shutdown" type="() -> None">
+  Close the tub
+</ParamField>
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.tub_v2 import TubWriter
+
+# Create writer
+tub_writer = TubWriter(
+    base_path='data/tub_1',
+    inputs=['cam/image_array', 'user/angle', 'user/throttle', 'user/mode'],
+    types=['image_array', 'float', 'float', 'str']
+)
+
+# Add to vehicle
+V.add(tub_writer,
+      inputs=['cam/image_array', 'user/angle', 'user/throttle', 'user/mode'],
+      outputs=['tub/num_records'],
+      run_condition='recording')
+```
+
+## TubHandler
+
+Helper class for managing multiple tubs.
+
+**Constructor:**
+
+```python
+TubHandler(path)
+```
+
+<ParamField path="path" type="str">
+  Base path containing tubs
+</ParamField>
+
+**Methods:**
+
+<ParamField path="get_tub_list" type="(path: str) -> list">
+  Get list of tub directories
+</ParamField>
+
+<ParamField path="next_tub_number" type="(path: str) -> int">
+  Get next available tub number
+</ParamField>
+
+<ParamField path="create_tub_path" type="() -> str">
+  Create a new tub path with incremented number and date
+</ParamField>
+
+<ParamField path="new_tub_writer" type="(inputs, types, user_meta) -> TubWriter">
+  Create a new TubWriter with auto-generated path
+</ParamField>
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.datastore import TubHandler
+
+handler = TubHandler(path='data')
+
+# Create new tub with auto-naming
+tub_writer = handler.new_tub_writer(
+    inputs=['cam/image_array', 'user/angle', 'user/throttle'],
+    types=['image_array', 'float', 'float'],
+    user_meta=['location:track1', 'driver:alice']
+)
+```
+
+## TubWiper
+
+Part for deleting recent records during recording (delete bad data on the fly).
+
+**Constructor:**
+
+```python
+TubWiper(tub, num_records=20)
+```
+
+<ParamField path="tub" type="Tub or TubWriter">
+  Tub to operate on
+</ParamField>
+
+<ParamField path="num_records" type="int" default="20">
+  Number of records to delete when triggered
+</ParamField>
+
+**Methods:**
+
+<ParamField path="run" type="(is_delete: bool) -> None">
+  Delete records when trigger switches from False to True (debounced)
+</ParamField>
+
+**Usage Example:**
+
+```python
+from donkeycar.parts.tub_v2 import TubWriter, TubWiper
+
+# Create tub writer
+tub_writer = TubWriter('data/tub_1', inputs=['cam/image_array'], types=['image_array'])
+
+# Create wiper
+wiper = TubWiper(tub=tub_writer.tub, num_records=50)
+
+# Add to vehicle
+V.add(wiper, inputs=['delete_records'])
+```
+
+## Legacy Tub (v1)
+
+Older tub implementation (deprecated, use Tub v2 instead).
+
+**Constructor:**
+
+```python
+Tub(path, inputs=None, types=None, user_meta=[])
+```
+
+**Methods:** Similar to v2 but with different internal implementation.
+
+## Record Structure
+
+### Record Format
+
+Each record contains:
+- User-defined fields (inputs)
+- Private metadata:
+  - `_timestamp_ms`: Timestamp in milliseconds
+  - `_index`: Record index
+  - `_session_id`: Recording session ID
+
+### Example Record
+
+```json
+{
+  "cam/image_array": "123_cam-image_array_.jpg",
+  "user/angle": 0.15,
+  "user/throttle": 0.3,
+  "user/mode": "user",
+  "_timestamp_ms": 1234567890,
+  "_index": 123,
+  "_session_id": "abc123"
+}
+```
+
+## Tub Directory Structure
+
+```
+data/tub_1/
+├── manifest.json          # Tub metadata and catalog
+├── images/               # Image files
+│   ├── 0_cam-image_array_.jpg
+│   ├── 1_cam-image_array_.jpg
+│   └── ...
+└── deleted.json          # Deleted record indexes (optional)
+```
+
+## Manifest File
+
+The manifest.json contains:
+- Input channel names and types
+- Metadata
+- Current index
+- Session information
+- Record catalog
+
+**Example:**
+
+```json
+{
+  "inputs": ["cam/image_array", "user/angle", "user/throttle"],
+  "types": ["image_array", "float", "float"],
+  "metadata": {},
+  "current_index": 1234,
+  "session_id": "abc123",
+  "records": [
+    {"_index": 0, "_timestamp_ms": 1234567890, ...},
+    {"_index": 1, "_timestamp_ms": 1234567891, ...}
+  ]
+}
+```
+
+## Configuration
+
+Typical datastore configuration in `myconfig.py`:
+
+```python
+# Tub Settings
+TUB_PATH = 'data'
+MAX_CATALOG_LEN = 1000
+
+# Inputs to record
+INPUTS = ['cam/image_array', 'user/angle', 'user/throttle', 'user/mode']
+TYPES = ['image_array', 'float', 'float', 'str']
+
+# Auto-delete settings  
+NUM_RECORDS_TO_ERASE = 100
+```
+
+## Integration Example
+
+From templates like `complete.py`:
+
+```python
+from donkeycar.parts.datastore import TubHandler
+from donkeycar.parts.tub_v2 import TubWriter
+
+# Create tub handler
+tub_handler = TubHandler(path=cfg.DATA_PATH)
+
+# Create new tub
+inputs = ['cam/image_array', 'user/angle', 'user/throttle', 'user/mode']
+types = ['image_array', 'float', 'float', 'str']
+
+tub = tub_handler.new_tub_writer(inputs=inputs, types=types)
+
+# Add to vehicle
+V.add(tub,
+      inputs=inputs,
+      outputs=['tub/num_records'],
+      run_condition='recording')
+```
+
+## Reading Tubs for Training
+
+```python
+from donkeycar.parts.tub_v2 import Tub
+
+# Open existing tub
+tub = Tub('data/tub_1', read_only=True)
+
+# Iterate over records
+for record in tub:
+    img = record['cam/image_array']
+    angle = record['user/angle']
+    throttle = record['user/throttle']
+    # ... use for training
+
+# Get tub size
+num_records = len(tub)
+```

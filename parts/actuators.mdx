@@ -1,0 +1,408 @@
+---
+title: Actuator Parts
+description: Motor controllers and servo drivers for Donkeycar
+---
+
+Actuator parts control the physical movement of your vehicle through motors, servos, and motor controllers.
+
+## Core Concepts
+
+### PWM and Pulse Control
+
+Most actuators use PWM (Pulse Width Modulation) signals:
+- **Frequency**: Typically 50-60 Hz for RC servos
+- **Pulse Width**: 1-2 milliseconds
+  - 1.0 ms = full reverse/left
+  - 1.5 ms = neutral/center
+  - 2.0 ms = full forward/right
+- **Duty Cycle**: Pulse width / period (5-10% at 50Hz)
+
+**Location**: `donkeycar/parts/actuator.py:55`
+
+```python
+from donkeycar.parts.actuator import duty_cycle, pulse_ms
+
+# Calculate duty cycle for 1.5ms pulse at 60Hz
+duty = duty_cycle(1.5, 60)  # Returns 0.09 (9%)
+
+# Convert 12-bit pulse value to milliseconds
+ms = pulse_ms(307)  # Returns pulse width in ms
+```
+
+## PulseController
+
+Modern, unified controller for PWM output.
+
+**Location**: `donkeycar/parts/actuator.py:85`
+
+```python
+from donkeycar.parts.actuator import PulseController
+from donkeycar.parts.pins import PwmPin
+
+# Create PWM pin (implementation depends on hardware)
+pwm_pin = PwmPin(pin_number=12, frequency=60)
+
+# Create pulse controller
+controller = PulseController(
+    pwm_pin=pwm_pin,
+    pwm_scale=1.0,      # Scale factor for non-standard frequencies
+    pwm_inverted=False  # Invert duty cycle if needed
+)
+
+# Set pulse (0-4095, 12-bit)
+controller.set_pulse(307)  # ~1.5ms neutral pulse
+```
+
+## Steering Control
+
+### PWMSteering
+
+Converts steering angles (-1 to 1) to PWM pulses.
+
+**Location**: `donkeycar/parts/actuator.py:282`
+
+```python
+from donkeycar.parts.actuator import PWMSteering, PulseController
+from donkeycar.parts.pins import PCA9685PwmPin
+
+# Create PWM controller
+pin = PCA9685PwmPin(channel=1, address=0x40, frequency=60)
+controller = PulseController(pwm_pin=pin)
+
+# Create steering
+steering = PWMSteering(
+    controller=controller,
+    left_pulse=290,   # 12-bit pulse for full left
+    right_pulse=490   # 12-bit pulse for full right
+)
+
+# In vehicle
+V.add(steering, inputs=['user/angle'])
+
+# Or run directly
+steering.run(0.0)    # Center
+steering.run(-1.0)   # Full left  
+steering.run(1.0)    # Full right
+```
+
+**Calibration**:
+1. Find center pulse: `controller.set_pulse(390)` (adjust until wheels straight)
+2. Find left pulse: Adjust until wheels full left
+3. Find right pulse: Adjust until wheels full right
+4. Update `myconfig.py` with these values
+
+## Throttle Control
+
+### PWMThrottle
+
+Converts throttle values (-1 to 1) to PWM pulses for ESC (Electronic Speed Controller).
+
+**Location**: `donkeycar/parts/actuator.py:331`
+
+```python
+from donkeycar.parts.actuator import PWMThrottle, PulseController
+from donkeycar.parts.pins import PCA9685PwmPin
+
+# Create PWM controller  
+pin = PCA9685PwmPin(channel=0, address=0x40, frequency=60)
+controller = PulseController(pwm_pin=pin)
+
+# Create throttle
+throttle = PWMThrottle(
+    controller=controller,
+    max_pulse=500,    # Full forward
+    min_pulse=200,    # Full reverse
+    zero_pulse=350    # Stopped
+)
+
+# In vehicle
+V.add(throttle, inputs=['user/throttle'])
+
+# Or run directly
+throttle.run(0.0)    # Stop
+throttle.run(0.5)    # Half forward
+throttle.run(-0.5)   # Half reverse
+```
+
+**ESC Calibration**:
+```python
+# Initialize ESC (done automatically in __init__)
+# 1. Send max pulse
+controller.set_pulse(500)
+time.sleep(0.01)
+# 2. Send min pulse  
+controller.set_pulse(200)
+time.sleep(0.01)
+# 3. Send zero pulse
+controller.set_pulse(350)
+time.sleep(1)
+```
+
+## Motor Controllers
+
+### PCA9685 (Legacy)
+
+Popular I2C PWM controller board (legacy, use PulseController instead).
+
+**Location**: `donkeycar/parts/actuator.py:128`
+
+```python
+from donkeycar.parts.actuator import PCA9685
+
+# Direct PCA9685 usage (legacy)
+steering_controller = PCA9685(
+    channel=1,
+    address=0x40,    # I2C address
+    frequency=60,    # PWM frequency
+    busnum=None      # I2C bus number (None=auto)
+)
+
+steering_controller.set_pulse(390)  # Set pulse directly
+```
+
+**Installation**:
+```bash
+pip install adafruit-circuitpython-pca9685
+```
+
+### VESC
+
+For electric skateboard motors and high-power applications.
+
+**Location**: `donkeycar/parts/actuator.py:184`
+
+```python
+from donkeycar.parts.actuator import VESC
+
+vesc = VESC(
+    serial_port='/dev/ttyACM0',
+    percent=0.2,              # Max duty cycle (20%)
+    has_sensor=False,
+    start_heartbeat=True,
+    baudrate=115200,
+    timeout=0.05,
+    steering_scale=1.0,
+    steering_offset=0.0
+)
+
+# Run with angle and throttle
+vesc.run(angle=0.0, throttle=0.5)
+```
+
+**Installation**:
+```bash
+pip install git+https://github.com/LiamBindle/PyVESC.git@master
+```
+
+**Permissions**:
+```bash
+sudo chmod a+rw /dev/ttyACM0
+```
+
+## Differential Drive
+
+For two-wheeled robots and differential drive vehicles.
+
+### L298N H-Bridge (3-pin mode)
+
+**Location**: `donkeycar/parts/actuator.py:756`
+
+```python
+from donkeycar.parts.actuator import L298N_HBridge_3pin, TwoWheelSteeringThrottle
+from donkeycar.parts.pins import RPi_GPIO_OutputPin, RPi_GPIO_PwmPin
+
+# Left motor
+left_forward = RPi_GPIO_OutputPin(pin=23)
+left_backward = RPi_GPIO_OutputPin(pin=24)
+left_pwm = RPi_GPIO_PwmPin(pin=25, frequency=1000)
+
+left_motor = L298N_HBridge_3pin(
+    pin_forward=left_forward,
+    pin_backward=left_backward,
+    pwm_pin=left_pwm,
+    zero_throttle=0.0,
+    max_duty=0.9
+)
+
+# Right motor (similar setup)
+right_motor = L298N_HBridge_3pin(...)
+
+# Steering mixer
+mixer = TwoWheelSteeringThrottle()
+
+# In vehicle
+V.add(mixer, 
+      inputs=['user/throttle', 'user/angle'],
+      outputs=['left_throttle', 'right_throttle'])
+V.add(left_motor, inputs=['left_throttle'])
+V.add(right_motor, inputs=['right_throttle'])
+```
+
+**Wiring**:
+- **IN1** (Forward): GPIO pin to OutputPin
+- **IN2** (Backward): GPIO pin to OutputPin  
+- **ENA** (PWM): GPIO pin to PwmPin
+- **OUT1/OUT2**: Connect to motor
+
+### L298N H-Bridge (2-pin mode)
+
+For mini L298N boards and L9110S/HG7881 drivers.
+
+**Location**: `donkeycar/parts/actuator.py:872`
+
+```python
+from donkeycar.parts.actuator import L298N_HBridge_2pin
+from donkeycar.parts.pins import RPi_GPIO_PwmPin
+
+left_motor = L298N_HBridge_2pin(
+    pin_forward=RPi_GPIO_PwmPin(pin=23, frequency=1000),
+    pin_backward=RPi_GPIO_PwmPin(pin=24, frequency=1000),
+    zero_throttle=0.0,
+    max_duty=0.9
+)
+```
+
+**Wiring**:
+- **IA/IB**: Both to PWM-capable GPIO pins
+- **OA/OB**: Connect to motor
+
+### TwoWheelSteeringThrottle
+
+Mixes throttle and steering for differential drive.
+
+**Location**: `donkeycar/parts/actuator.py:830`
+
+```python
+from donkeycar.parts.actuator import TwoWheelSteeringThrottle
+
+mixer = TwoWheelSteeringThrottle()
+
+# Convert steering + throttle to left/right motor speeds
+left_speed, right_speed = mixer.run(throttle=0.5, steering=0.3)
+```
+
+**Algorithm**:
+- Steering < 0 (left): Reduce left motor speed
+- Steering > 0 (right): Reduce right motor speed
+- Steering = 0: Both motors equal
+
+## Configuration
+
+In `myconfig.py`:
+
+```python
+# Drive train type
+DRIVE_TRAIN_TYPE = "SERVO_ESC"  # Options: SERVO_ESC, DC_TWO_WHEEL, DC_TWO_WHEEL_L298N
+
+# PWM settings
+PCA9685_I2C_ADDR = 0x40
+PCA9685_I2C_BUSNUM = None
+PCA9685_FREQUENCY = 60
+
+# Steering
+STEERING_CHANNEL = 1
+STEERING_LEFT_PWM = 290
+STEERING_RIGHT_PWM = 490
+
+# Throttle
+THROTTLE_CHANNEL = 0
+THROTTLE_FORWARD_PWM = 500
+THROTTLE_STOPPED_PWM = 350
+THROTTLE_REVERSE_PWM = 200
+
+# Throttle limits
+THROTTLE_MAX = 1.0
+THROTTLE_MIN = -1.0
+
+# For differential drive
+DC_TWO_WHEEL_L298N_ZERO_THROTTLE = 0.05  # Deadzone
+```
+
+## Calibration Tools
+
+### Manual Calibration Script
+
+```python
+from donkeycar.parts.actuator import PulseController
+from donkeycar.parts.pins import PCA9685PwmPin
+
+# Setup
+pin = PCA9685PwmPin(channel=1, address=0x40, frequency=60)
+controller = PulseController(pwm_pin=pin)
+
+# Find center
+for pulse in range(350, 450, 10):
+    controller.set_pulse(pulse)
+    input(f"Pulse {pulse} - Press Enter for next...")
+    
+# Note the pulse where servo is centered
+```
+
+### Calibration Manager
+
+```bash
+donkey calibrate --channel 1
+```
+
+## Legacy Controllers
+
+These are deprecated but still available:
+
+- **RPi_GPIO_Servo** - Direct GPIO PWM (use PulseController instead)
+- **ServoBlaster** - User-space PWM via DMA (use PulseController instead)
+- **ArduinoFirmata** - Arduino-based PWM (use PulseController instead)
+- **Teensy** - Teensy microcontroller (undocumented)
+- **Maestro** - Pololu Maestro (undocumented)
+- **JHat** - Teensy-based PCA9685 emulator (undocumented)
+
+## Pin Providers
+
+See `donkeycar/parts/pins.py` for pin implementations:
+
+- **PCA9685PwmPin** - PCA9685 I2C PWM controller
+- **RPi_GPIO_PwmPin** - Raspberry Pi GPIO PWM
+- **PiGPIO_PwmPin** - Hardware PWM via pigpio daemon
+- **ServoBlasterPwmPin** - ServoBlaster driver
+
+## Common Issues
+
+### Servo Jitter
+
+- Check power supply (servos need 5-6V, 2A+)
+- Add capacitor across servo power
+- Reduce PWM frequency
+- Check for loose connections
+
+### ESC Not Responding
+
+- Verify ESC is calibrated
+- Check battery voltage
+- Ensure correct pulse range
+- Try different PWM frequency
+
+### Motor Runs Backward
+
+- Swap motor wires
+- Or use `pwm_inverted=True` in PulseController
+- Or negate throttle in code
+
+### I2C Errors (PCA9685)
+
+```bash
+# Enable I2C
+sudo raspi-config
+# Interface Options -> I2C -> Enable
+
+# Check I2C devices
+sudo i2cdetect -y 1
+# Should show 0x40 (or your address)
+
+# Check bus number
+ls /dev/i2c-*
+```
+
+## Next Steps
+
+- [Controllers](/parts/controllers) - Add user input
+- [Sensors](/parts/sensors) - Add odometry and feedback
+- [Custom Parts](/parts/custom-parts) - Create custom drive trains

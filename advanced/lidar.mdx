@@ -1,0 +1,505 @@
+---
+title: "Lidar Integration"
+description: "RPLidar obstacle detection and SLAM for autonomous navigation"
+---
+
+Lidar sensors provide 2D or 3D distance measurements for obstacle detection, mapping, and SLAM (Simultaneous Localization and Mapping). Donkeycar supports RPLidar and YDLidar devices.
+
+## Overview
+
+Lidar capabilities:
+- **360° scanning** - Continuous distance measurements
+- **Obstacle detection** - Identify and avoid obstacles
+- **SLAM** - Build maps and localize simultaneously
+- **Range filtering** - Limit angle and distance ranges
+- **Real-time visualization** - Display polar plots
+- **Data recording** - Log scans for analysis
+
+## Supported Hardware
+
+### RPLidar A1M8
+- **Range**: 12 meters
+- **Scan rate**: ~7 Hz
+- **Measurements**: ~1850 per second
+- **Connection**: USB
+- **Cost**: ~$100
+
+### RPLidar A2/A3
+- **Range**: 25-40 meters  
+- **Scan rate**: 10-20 Hz
+- **Measurements**: Higher density
+- **Connection**: USB
+
+### YDLidar X4
+- **Range**: 10 meters
+- **Scan rate**: 5-12 Hz
+- **Connection**: USB
+- **Cost**: ~$100
+
+## Installation
+
+### Hardware Setup
+
+```bash
+# Install RPLidar driver
+pip install Adafruit_CircuitPython_RPLIDAR
+
+# Install dependencies
+pip install glob2 pyserial numpy pillow
+
+# For YDLidar
+pip install PyLidar3
+```
+
+### USB Permissions (Linux)
+
+```bash
+# Add udev rule for lidar
+echo 'SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", MODE="0666"' | sudo tee /etc/udev/rules.d/99-lidar.rules
+
+# Reload udev
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+
+# Verify device
+ls -l /dev/ttyUSB*
+```
+
+## Configuration
+
+Enable lidar in `myconfig.py`:
+
+```python
+# Enable lidar
+USE_LIDAR = True
+
+# Lidar type
+LIDAR_TYPE = 'RP'  # 'RP' for RPLidar, 'YD' for YDLidar
+
+# Angle filtering (degrees)
+LIDAR_LOWER_LIMIT = 90   # Block rear of vehicle
+LIDAR_UPPER_LIMIT = 270  # Front 180° view
+
+# Note: For RPLidar A1M8, 0° is at motor direction
+# Adjust limits based on mounting orientation
+```
+
+From `donkeycar/templates/cfg_path_follow.py:404-409`.
+
+## RPLidar2 Part
+
+Advanced RPLidar driver with filtering:
+
+```python
+from donkeycar.parts.lidar import RPLidar2, CLOCKWISE, COUNTER_CLOCKWISE
+
+# Create lidar part
+lidar = RPLidar2(
+    min_angle=90.0,        # degrees
+    max_angle=270.0,       # degrees  
+    min_distance=100.0,    # millimeters
+    max_distance=4000.0,   # millimeters
+    forward_angle=0.0,     # degrees (direction of 0°)
+    angle_direction=CLOCKWISE,  # or COUNTER_CLOCKWISE
+    batch_ms=50,           # polling duration
+    debug=False
+)
+
+# Add to vehicle
+V.add(lidar, 
+      outputs=['lidar/measurements'],
+      threaded=True)
+```
+
+From `donkeycar/parts/lidar.py:49-136`.
+
+### Measurement Format
+
+Each measurement is a tuple:
+```python
+(distance, angle, timestamp, scan_id, index)
+```
+
+- `distance` - millimeters, 0 = invalid
+- `angle` - degrees, adjusted for forward_angle
+- `timestamp` - seconds since epoch
+- `scan_id` - full scan counter
+- `index` - measurement index within scan
+
+From `donkeycar/parts/lidar.py:171-218`.
+
+### Angle Configuration
+
+```python
+# RPLidar spins clockwise
+# 0° is at motor housing
+
+# If car forward is at motor (0°):
+forward_angle = 0.0
+min_angle = 270.0  # left side
+max_angle = 90.0   # right side (wraps through 0)
+
+# If car forward is opposite motor (180°):
+forward_angle = 180.0  
+min_angle = 90.0   # left side
+max_angle = 270.0  # right side
+```
+
+### Angle Filtering
+
+From `donkeycar/parts/lidar.py:36-46`:
+
+```python
+def angle_in_bounds(angle, min_angle, max_angle):
+    """Determine if angle is between two bounds"""
+    if min_angle <= max_angle:
+        return min_angle <= angle <= max_angle
+    else:
+        # Range crosses 0°
+        return (min_angle <= angle <= 360) or (max_angle >= angle >= 0)
+```
+
+## Simple RPLidar Part
+
+Basic driver for quick setup:
+
+```python
+from donkeycar.parts.lidar import RPLidar
+
+# Create simple lidar
+lidar = RPLidar(
+    lower_limit=90,   # degrees
+    upper_limit=270,  # degrees
+    debug=False
+)
+
+# Add to vehicle
+V.add(lidar,
+      outputs=['lidar/distances'],
+      threaded=True)
+```
+
+Returns sorted array of distances.
+
+From `donkeycar/parts/lidar.py:267-332`.
+
+## YDLidar Part
+
+```python
+from donkeycar.parts.lidar import YDLidar
+
+# Create YDLidar
+lidar = YDLidar(port='/dev/ttyUSB0')
+
+# Add to vehicle  
+V.add(lidar,
+      outputs=['lidar/distances', 'lidar/angles'],
+      threaded=True)
+```
+
+From `donkeycar/parts/lidar.py:335-390`.
+
+## Visualization
+
+### LidarPlot2
+
+Display measurements as polar plot:
+
+```python
+from donkeycar.parts.lidar import LidarPlot2
+
+# Create plotter
+plotter = LidarPlot2(
+    resolution=(500, 500),
+    plot_type=LidarPlot2.PLOT_TYPE_CIRCLE,  # or PLOT_TYPE_LINE
+    mark_px=3,                # point size
+    max_dist=4000,            # millimeters
+    angle_direction=COUNTER_CLOCKWISE,
+    rotate_plot=0,            # degrees to rotate display
+    background_color=(32, 32, 32),
+    border_color=(128, 128, 128),
+    point_color=(64, 255, 64)
+)
+
+# Add to vehicle
+V.add(plotter,
+      inputs=['lidar/measurements'],
+      outputs=['lidar/image'])
+```
+
+From `donkeycar/parts/lidar.py:643-714`.
+
+### Display on Web UI
+
+```python
+# Add camera output for lidar image
+from donkeycar.parts.network import TCPServeValue
+from donkeycar.parts.image import ImgArrToJpg
+
+if cfg.USE_LIDAR:
+    pub = TCPServeValue("lidar")
+    V.add(ImgArrToJpg(), 
+          inputs=['lidar/image'],
+          outputs=['lidar/jpg'])
+    V.add(pub, inputs=['lidar/jpg'])
+```
+
+## SLAM with BreezySLAM
+
+Simultaneous Localization and Mapping:
+
+```python
+from donkeycar.parts.lidar import BreezySLAM, BreezyMap, MapToImage
+
+# Create map buffer
+MAP_SIZE_PIXELS = 500
+MAP_SIZE_METERS = 10
+
+map_buffer = BreezyMap(MAP_SIZE_PIXELS)
+V.add(map_buffer, outputs=['slam/map_bytes'])
+
+# Create SLAM
+slam = BreezySLAM(MAP_SIZE_PIXELS, MAP_SIZE_METERS)
+V.add(slam,
+      inputs=['lidar/distances', 'lidar/angles', 'slam/map_bytes'],
+      outputs=['slam/x', 'slam/y', 'slam/theta'])
+
+# Convert map to image
+map_to_img = MapToImage(resolution=(MAP_SIZE_PIXELS, MAP_SIZE_PIXELS))
+V.add(map_to_img,
+      inputs=['slam/map_bytes'],
+      outputs=['slam/map_image'])
+```
+
+From `donkeycar/parts/lidar.py:717-770`.
+
+### Requirements
+
+```bash
+pip install breezyslam
+```
+
+## Obstacle Detection
+
+Detect obstacles in front of car:
+
+```python
+class ObstacleDetector:
+    def __init__(self, min_distance=500, angle_range=30):
+        """Detect obstacles within angle_range of forward"""
+        self.min_distance = min_distance  # mm
+        self.angle_range = angle_range     # degrees
+        
+    def run(self, measurements):
+        """Return True if obstacle detected"""
+        for distance, angle, _, _, _ in measurements:
+            # Check if measurement is in front
+            if abs(angle) < self.angle_range or abs(angle - 360) < self.angle_range:
+                if 0 < distance < self.min_distance:
+                    return True
+        return False
+
+# Add to vehicle
+obstacle = ObstacleDetector(min_distance=500, angle_range=45)
+V.add(obstacle,
+      inputs=['lidar/measurements'],
+      outputs=['obstacle/detected'])
+
+# Emergency stop on obstacle
+class SafetyStop:
+    def run(self, throttle, obstacle_detected):
+        if obstacle_detected:
+            return 0.0  # Stop
+        return throttle
+
+V.add(SafetyStop(),
+      inputs=['pilot/throttle', 'obstacle/detected'],
+      outputs=['pilot/throttle'])
+```
+
+## Data Recording
+
+Record lidar scans to tub:
+
+```python
+# Add lidar data to tub inputs
+inputs = [
+    'cam/image_array',
+    'user/angle', 'user/throttle',
+    'lidar/measurements'  # Will be stored as array
+]
+
+types = [
+    'image_array',
+    'float', 'float',
+    'vector'  # Vector type for arrays
+]
+
+tub_writer = TubWriter(tub_path, inputs=inputs, types=types)
+V.add(tub_writer, inputs=inputs, outputs=["tub/num_records"], 
+      run_condition='recording')
+```
+
+Note: Large lidar scans increase tub size significantly.
+
+## Command Line Testing
+
+Test lidar from command line:
+
+```bash
+python -m donkeycar.parts.lidar \
+    --rate 10 \
+    --number 100 \
+    --min-angle 90 \
+    --max-angle 270 \
+    --max-distance 4000 \
+    --forward-angle 0 \
+    --angle-direction -1 \
+    --threaded
+```
+
+From `donkeycar/parts/lidar.py:773-923`.
+
+Arguments:
+- `--rate` - Scans per second
+- `--number` - Number of scans to collect
+- `--min-angle` - Minimum angle (degrees)
+- `--max-angle` - Maximum angle (degrees)  
+- `--min-distance` - Minimum distance (mm)
+- `--max-distance` - Maximum distance (mm)
+- `--forward-angle` - Forward direction (degrees)
+- `--angle-direction` - 1=clockwise, -1=counter-clockwise
+- `--threaded` - Run in threaded mode
+- `--rotate-plot` - Rotate display (degrees)
+
+## Performance Tuning
+
+### Batch Size
+
+Control polling duration:
+
+```python
+# More frequent updates (25ms)
+lidar = RPLidar2(batch_ms=25)
+
+# Less frequent (100ms)
+lidar = RPLidar2(batch_ms=100)
+```
+
+From `donkeycar/parts/lidar.py:134`.
+
+### Measurement Filtering
+
+Reduce data volume:
+
+```python
+# Only front hemisphere
+min_angle = 270.0
+max_angle = 90.0
+
+# Only mid-range
+min_distance = 200.0   # Ignore very close
+max_distance = 3000.0  # Ignore far away
+```
+
+### Threading
+
+Always run lidar in threaded mode:
+
+```python
+V.add(lidar, outputs=['lidar/measurements'], threaded=True)
+```
+
+From `donkeycar/parts/lidar.py:223-235`.
+
+## Troubleshooting
+
+### No Device Found
+
+```bash
+# Check USB connection
+ls -l /dev/ttyUSB*
+
+# Check permissions
+sudo chmod 666 /dev/ttyUSB0
+
+# Test serial port
+python -c "import serial; s=serial.Serial('/dev/ttyUSB0'); print('OK')"
+```
+
+### SerialException
+
+```python
+# Increase timeout
+self.lidar = RPLidar(None, self.port, timeout=5)
+
+# Check baud rate (RPLidar uses 115200)
+```
+
+From `donkeycar/parts/lidar.py:124`.
+
+### Noisy Measurements
+
+- Mount lidar firmly to reduce vibration
+- Add distance filtering to remove outliers
+- Increase min_distance to ignore close reflections
+- Check for reflective surfaces causing echoes
+
+### Low Scan Rate
+
+- Reduce angle range
+- Increase batch_ms
+- Use threaded mode
+- Check USB bandwidth
+
+## Best Practices
+
+1. **Mount securely** - Vibration causes noise
+2. **Clear field of view** - Avoid obstructions
+3. **Calibrate forward angle** - Match car orientation
+4. **Filter distances** - Remove invalid readings
+5. **Use threading** - Don't block vehicle loop
+6. **Test stationary first** - Verify angles and distances
+7. **Record sparingly** - Lidar data is large
+
+## Example Applications
+
+### Autonomous Parking
+
+```python
+# Detect parking space
+class ParkingDetector:
+    def run(self, measurements):
+        # Find gap in obstacles
+        # Return True if space found
+        pass
+```
+
+### Wall Following
+
+```python
+# Maintain distance from wall
+class WallFollower:
+    def run(self, measurements):
+        # Calculate distance to right wall
+        # Return steering to maintain offset
+        pass
+```
+
+### Collision Avoidance
+
+```python
+# Avoid obstacles ahead  
+class CollisionAvoidance:
+    def run(self, measurements, steering, throttle):
+        # Check for obstacles in direction of travel
+        # Modify steering to avoid
+        pass
+```
+
+## Next Steps
+
+- Combine with [path following](/advanced/path-following) for obstacle-aware navigation
+- Use [kinematics](/advanced/kinematics) to transform lidar to world coordinates
+- Stream data via [telemetry](/advanced/telemetry) for remote monitoring
+- Test in [simulator](/advanced/simulator) before hardware deployment

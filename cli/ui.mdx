@@ -1,0 +1,323 @@
+---
+title: donkey ui
+description: Launch the Donkeycar graphical user interface
+---
+
+The `donkey ui` command launches a graphical user interface for managing your Donkeycar. The UI provides a visual way to interact with your car's data, train models, and manage configurations.
+
+## Usage
+
+```bash
+donkey ui
+```
+
+## Overview
+
+The Donkeycar UI provides a graphical alternative to command-line tools, offering:
+
+- Visual tub management and data review
+- Model training with progress visualization
+- Configuration editing
+- Data visualization and analysis
+- Model comparison and evaluation
+
+<Note>
+The UI is a relatively new addition to Donkeycar and may not have all features available in the CLI tools. For advanced workflows, the command-line tools often provide more flexibility.
+</Note>
+
+## Features
+
+The graphical interface typically includes:
+
+### Tub Management
+- Browse and view recorded tubs
+- Preview images from tub data
+- Review driving sessions
+- Delete or archive old tubs
+- View tub metadata (record count, date, etc.)
+
+### Model Training
+- Select training data (tubs)
+- Configure training parameters
+- Start training with progress bar
+- View training metrics in real-time
+- Save trained models
+
+### Data Visualization
+- Plot steering and throttle distributions
+- View histograms of recorded data
+- Compare model predictions to user inputs
+- Visualize training/validation loss curves
+
+### Configuration
+- Edit config parameters
+- Adjust model settings
+- Configure hardware options
+- Save configuration changes
+
+## Launching the UI
+
+From your car directory:
+
+```bash
+cd ~/mycar
+donkey ui
+```
+
+The UI will start and typically open in your default web browser or display a GUI window.
+
+## Example Session
+
+```bash
+$ donkey ui
+Starting Donkeycar UI...
+Loading configuration from: ./config.py
+UI server running at: http://localhost:8887
+Open your browser to: http://localhost:8887
+```
+
+<Info>
+The exact UI implementation may vary depending on your Donkeycar version. Refer to the UI's built-in help or tooltips for specific features.
+</Info>
+
+## Use Cases
+
+### Quick Data Review
+
+Visually review recorded data without command-line tools:
+```bash
+donkey ui
+# Navigate to tub browser
+# Click through images to review quality
+```
+
+### Interactive Training
+
+Train models with visual feedback:
+```bash
+donkey ui
+# Select training tab
+# Choose tubs
+# Configure parameters
+# Click "Train"
+# Watch progress in real-time
+```
+
+### Configuration Editing
+
+Modify settings through forms instead of editing files:
+```bash
+donkey ui
+# Navigate to config editor
+# Adjust parameters with sliders/inputs
+# Save changes
+```
+
+### Model Comparison
+
+Compare multiple models visually:
+```bash
+donkey ui
+# Load model 1
+# View predictions on test data
+# Switch to model 2
+# Compare results side-by-side
+```
+
+## Benefits Over CLI
+
+### Visual Feedback
+- See images directly instead of file paths
+- Interactive plots and charts
+- Real-time training progress
+- Visual model comparison
+
+### Easier for Beginners
+- No need to remember command syntax
+- Guided workflows
+- Form-based configuration
+- Built-in help and tooltips
+
+### Batch Operations
+- Select multiple tubs with checkboxes
+- Bulk delete old data
+- Compare multiple models at once
+
+## When to Use CLI Instead
+
+The command-line tools are often better for:
+
+- **Automation**: Scripting and batch processing
+- **Remote access**: SSH sessions without display
+- **Advanced options**: Full access to all parameters
+- **Performance**: Lower overhead for large operations
+- **Documentation**: Easier to document exact commands
+- **Reproducibility**: Exact command history
+
+## Requirements
+
+The UI may require additional dependencies:
+
+```bash
+pip install donkeycar[ui]
+```
+
+Or specifically:
+
+```bash
+pip install flask pillow matplotlib
+```
+
+## Troubleshooting
+
+### UI won't start
+
+- Check that required dependencies are installed
+- Verify no other service is using the port
+- Look for error messages in terminal output
+- Try running from car directory (where config.py exists)
+
+### Browser doesn't open automatically
+
+- Manually navigate to the URL shown in terminal (typically `http://localhost:8887`)
+- Check if your firewall is blocking the port
+- Try a different browser
+
+### Can't see tubs or models
+
+- Ensure you're running from the correct directory
+- Verify `data/` and `models/` directories exist
+- Check file permissions
+- Refresh the browser page
+
+### UI is slow or unresponsive
+
+- Close other applications to free resources
+- Try with smaller tubs first
+- Check if training is running in background
+- Restart the UI
+
+### Port already in use
+
+```
+Error: Port 8887 is already in use
+```
+
+- Stop other instances of the UI
+- Kill the process using that port: `lsof -ti:8887 | xargs kill`
+- Change the port in configuration
+
+### Remote access issues
+
+- For remote access, you may need to bind to `0.0.0.0` instead of `localhost`
+- Use SSH port forwarding: `ssh -L 8887:localhost:8887 user@car-ip`
+- Configure firewall to allow the port
+
+## Comparison with Other Tools
+
+| Task | CLI Command | UI Equivalent |
+|------|-------------|---------------|
+| View tub data | `ls data/` | Tub browser |
+| Train model | `donkey train` | Training tab |
+| Plot predictions | `donkey tubplot` | Visualization tab |
+| View histograms | `donkey tubhist` | Data analysis tab |
+| Edit config | Edit `myconfig.py` | Config editor |
+| Create movie | `donkey makemovie` | Video generator |
+
+## Advanced Usage
+
+### Custom UI Port
+
+If you need to run on a different port, check the UI documentation for configuration options or environment variables:
+
+```bash
+export DONKEY_UI_PORT=9000
+donkey ui
+```
+
+### Multiple Cars
+
+Run UI for different car configurations:
+
+```bash
+# Car 1
+cd ~/car1
+donkey ui
+
+# Car 2 (in different terminal, different port)
+cd ~/car2  
+export DONKEY_UI_PORT=8888
+donkey ui
+```
+
+### Remote Development
+
+Access UI running on a remote car:
+
+```bash
+# On your local machine
+ssh -L 8887:localhost:8887 pi@mycar.local
+
+# On the remote car (in SSH session)
+cd ~/mycar
+donkey ui
+
+# Now open http://localhost:8887 on your local machine
+```
+
+## Best Practices
+
+### Security
+- Don't expose the UI to public internet without authentication
+- Use SSH tunneling for remote access
+- Keep Donkeycar updated for security patches
+
+### Performance
+- Close UI when not in use to free resources
+- Work with smaller datasets for faster response
+- Train models via CLI for better performance
+
+### Workflow
+- Use UI for exploration and quick tasks
+- Use CLI for production workflows and automation
+- Document important operations with CLI commands
+
+## Alternative Interfaces
+
+Besides the `donkey ui` command, you can also:
+
+### Web Interface During Driving
+
+```bash
+python manage.py drive
+# Access web interface at http://<car-ip>:8887
+```
+
+Provides driving controls and live camera feed.
+
+### Jupyter Notebooks
+
+For data analysis:
+
+```python
+import donkeycar as dk
+from donkeycar.parts.tub_v2 import Tub
+
+tub = Tub('./data/tub_1', read_only=True)
+# Interactive exploration and visualization
+```
+
+## Next Steps
+
+After exploring the UI:
+
+1. **Learn CLI equivalents**: Understand command-line versions for automation
+2. **Combine approaches**: Use UI for exploration, CLI for production
+3. **Create workflows**: Document your process using both tools
+4. **Contribute**: Report UI bugs or suggest features to Donkeycar project
+
+For more control and advanced features, explore the CLI commands:
+- [`donkey createcar`](/cli/createcar) - Create new car projects
+- [`donkey train`](/cli/train) - Train models with full options
+- [`donkey tubplot`](/cli/tubplot) - Advanced prediction analysis
+- [`donkey makemovie`](/cli/makemovie) - Create detailed videos

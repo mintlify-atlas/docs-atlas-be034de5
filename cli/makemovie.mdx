@@ -1,0 +1,265 @@
+---
+title: donkey makemovie
+description: Create videos from recorded tub data with optional model predictions
+---
+
+The `donkey makemovie` command creates a video (MP4) from recorded tub data. It can optionally overlay model predictions, user inputs, and saliency maps to visualize autonomous driving behavior.
+
+## Usage
+
+```bash
+donkey makemovie [options]
+```
+
+## Options
+
+<ParamField path="--tub" type="string" required>
+  Path to the tub directory containing recorded data to convert into a movie.
+</ParamField>
+
+<ParamField path="--out" type="string" default="tub_movie.mp4">
+  Output filename for the generated movie. Default is `tub_movie.mp4`.
+</ParamField>
+
+<ParamField path="--config" type="string" default="./config.py">
+  Location of config file to use. Default is `./config.py`.
+</ParamField>
+
+<ParamField path="--model" type="string">
+  Path to a trained model file. If provided, the video will show the model's predictions alongside user inputs.
+</ParamField>
+
+<ParamField path="--type" type="string">
+  Model type to load (e.g., `linear`, `categorical`). Required if `--model` is specified and the type cannot be inferred.
+</ParamField>
+
+<ParamField path="--salient" type="boolean" default="false">
+  Overlay a saliency map showing which parts of the image most influence the model's decisions. Requires `--model` to be specified.
+</ParamField>
+
+<ParamField path="--start" type="integer" default="0">
+  Index of the first frame to process. Use this to skip the beginning of a tub.
+</ParamField>
+
+<ParamField path="--end" type="integer" default="-1">
+  Index of the last frame to process. Default is -1 (process until the end). Use this to limit the video length.
+</ParamField>
+
+<ParamField path="--scale" type="integer" default="2">
+  Scale factor to enlarge the output video frames. Default is 2x. Higher values create larger videos but increase processing time and file size.
+</ParamField>
+
+<ParamField path="--draw-user-input" type="boolean" default="true">
+  Show user input (steering/throttle) overlaid on the video. Use `--draw-user-input=false` to disable.
+</ParamField>
+
+## What Gets Created
+
+The command creates a video file showing:
+
+1. **Camera images** from the tub, scaled by the `--scale` factor
+2. **User inputs** (steering and throttle values) if `--draw-user-input` is enabled
+3. **Model predictions** (if `--model` is specified) showing predicted steering and throttle
+4. **Saliency map** (if `--salient` is enabled) highlighting image regions affecting model decisions
+
+## Examples
+
+### Create basic movie from tub
+
+```bash
+donkey makemovie --tub ./data/tub_1_20-03-15
+```
+
+Creates `tub_movie.mp4` with user inputs overlaid.
+
+### Specify custom output filename
+
+```bash
+donkey makemovie --tub ./data/tub_1_20-03-15 --out my_drive.mp4
+```
+
+### Create movie with model predictions
+
+```bash
+donkey makemovie --tub ./data/tub_1_20-03-15 \
+  --model ./models/pilot.h5 --out comparison.mp4
+```
+
+Shows both user inputs and model predictions side-by-side.
+
+### Create movie with saliency map
+
+```bash
+donkey makemovie --tub ./data/tub_1_20-03-15 \
+  --model ./models/pilot.h5 --salient --out saliency.mp4
+```
+
+Overlays a heatmap showing which image regions the model focuses on.
+
+### Process only part of the tub
+
+```bash
+donkey makemovie --tub ./data/tub_1_20-03-15 \
+  --start 100 --end 500 --out short_clip.mp4
+```
+
+Creates a video using only frames 100-500.
+
+### Create larger video
+
+```bash
+donkey makemovie --tub ./data/tub_1_20-03-15 --scale 4 --out large.mp4
+```
+
+Scales output to 4x size (640x480 if original is 160x120).
+
+### Model predictions without user input overlay
+
+```bash
+donkey makemovie --tub ./data/tub_1_20-03-15 \
+  --model ./models/pilot.h5 --draw-user-input=false --out model_only.mp4
+```
+
+### Specify model type explicitly
+
+```bash
+donkey makemovie --tub ./data/tub_1_20-03-15 \
+  --model ./models/pilot.h5 --type linear --out output.mp4
+```
+
+## Output Example
+
+While processing, you'll see progress output:
+
+```
+Loading tub: ./data/tub_1_20-03-15
+Found 2,487 records
+
+Loading model: ./models/pilot.h5
+Model loaded successfully
+
+Creating movie...
+Processing frame 100/2487 (4%)
+Processing frame 200/2487 (8%)
+...
+Processing frame 2487/2487 (100%)
+
+Movie saved to: tub_movie.mp4
+Duration: 1:24
+Frames: 2,487
+Resolution: 320x240
+```
+
+## Video Overlays
+
+When displaying data on the video, the overlays typically show:
+
+### User Input Display
+- **Steering**: Value from -1.0 (full left) to 1.0 (full right)
+- **Throttle**: Value from -1.0 (full reverse) to 1.0 (full forward)
+- Color-coded bars or numerical values
+
+### Model Prediction Display
+- **Predicted Steering**: Model's steering output
+- **Predicted Throttle**: Model's throttle output  
+- Shown alongside user inputs for comparison
+
+### Saliency Map
+- Heatmap overlay on the camera image
+- Red/yellow areas indicate regions strongly influencing the model
+- Blue/green areas have less influence
+- Helps understand what the model is "looking at"
+
+## Use Cases
+
+### Model Evaluation
+Visualize how well your model's predictions match your driving:
+```bash
+donkey makemovie --tub ./data/validation_tub --model ./models/pilot.h5
+```
+
+### Debugging
+Identify where the model makes mistakes:
+```bash
+donkey makemovie --tub ./data/crash_tub --model ./models/pilot.h5 --salient
+```
+
+### Data Review
+Review recorded data to identify bad frames:
+```bash
+donkey makemovie --tub ./data/tub_5 --out review.mp4
+```
+
+### Presentations
+Create demo videos for sharing:
+```bash
+donkey makemovie --tub ./data/best_lap --scale 4 --out demo.mp4
+```
+
+### Training Analysis
+Compare multiple models on the same data:
+```bash
+donkey makemovie --tub ./data/test_track --model ./models/v1.h5 --out v1.mp4
+donkey makemovie --tub ./data/test_track --model ./models/v2.h5 --out v2.mp4
+```
+
+## Performance Considerations
+
+### Processing Time
+- Depends on: number of frames, scale factor, model complexity, saliency computation
+- Typical rate: 10-30 frames per second
+- Large tubs may take several minutes
+
+### File Size
+- Depends on: resolution (scale factor), duration, compression
+- Typical: 1-5 MB per minute at 2x scale
+- 4x scale will produce significantly larger files
+
+### Reducing Processing Time
+1. Use `--start` and `--end` to process fewer frames
+2. Reduce `--scale` factor
+3. Disable `--salient` (saliency computation is expensive)
+4. Use a machine with better CPU/GPU
+
+## Troubleshooting
+
+### "No such file or directory" error
+- Verify tub path exists and is correct
+- Use absolute paths if relative paths fail
+- Check that tub contains valid data (manifest.json)
+
+### Model loading errors
+- Ensure model path is correct
+- Verify model file is not corrupted
+- Specify `--type` if model type cannot be inferred
+- Check that config matches model requirements
+
+### Video codec errors
+- Install OpenCV with video support: `pip install opencv-python`
+- On Linux, may need: `sudo apt-get install libavcodec-extra`
+- Try different output formats: `.mp4`, `.avi`
+
+### Saliency map not showing
+- Requires TensorFlow/Keras model
+- Not supported for all model types
+- May require additional dependencies
+
+### Memory errors
+- Process fewer frames using `--start` and `--end`
+- Reduce `--scale` factor
+- Close other applications
+- Use a machine with more RAM
+
+## Next Steps
+
+After creating movies:
+
+1. **Analyze model behavior**: Look for patterns in prediction errors
+2. **Identify problem areas**: Note where predictions diverge from user input
+3. **Collect targeted data**: Record more data for problematic scenarios
+4. **Compare models**: Create movies for different model versions
+5. **Share results**: Use videos for documentation or presentations
+
+For more analysis options:
+- Use [`donkey tubplot`](/cli/tubplot) for quantitative prediction analysis
+- Use [`donkey tubhist`](/cli/tubhist) to visualize data distributions

@@ -1,0 +1,511 @@
+---
+title: "Path Following"
+description: "GPS waypoint navigation and PID path following for autonomous navigation"
+---
+
+Path following enables your Donkeycar to record and autonomously follow GPS waypoint paths. Using cross-track error and PID control, the car can navigate complex courses with high precision.
+
+## Overview
+
+Path following provides:
+- **GPS waypoint recording** - Capture paths by driving manually
+- **Autonomous navigation** - Follow recorded paths with PID control
+- **Pure pursuit** - Look-ahead path tracking algorithm
+- **Cross-track error** - Distance from desired path
+- **Variable throttle** - Replay recorded speeds or use constant throttle
+- **Real-time tuning** - Adjust PID parameters while driving
+
+## System Requirements
+
+- **Position source**: GPS, Intel T265, wheel encoders, or simulator
+- **Odometry**: For pose estimation from encoders
+- **Controller**: Joystick or web interface for path commands
+
+## Configuration
+
+Configure path following in `myconfig.py`:
+
+```python
+# PATH FOLLOWING
+PATH_FILENAME = "donkey_path.csv"   # Path storage file
+PATH_DEBUG = True                   # Enable position logging
+PATH_SCALE = 10.0                   # Display scaling for web UI
+PATH_OFFSET = (255, 255)            # Center point on map image
+PATH_MIN_DIST = 0.2                 # Minimum distance between waypoints (m)
+
+# Cross-track error search
+PATH_SEARCH_LENGTH = 10    # Number of points to search for closest point
+PATH_LOOK_AHEAD = 1        # Points ahead of closest for track segment
+PATH_LOOK_BEHIND = 1       # Points behind closest for track segment
+
+# PID controller parameters
+PID_P = -0.5               # Proportional gain
+PID_I = 0.000              # Integral gain  
+PID_D = -0.3               # Derivative gain
+
+# Throttle control
+PID_THROTTLE = 0.50        # Constant throttle value
+USE_CONSTANT_THROTTLE = False  # True for constant, False to replay recorded throttle
+
+# Real-time PID tuning
+PID_D_DELTA = 0.25         # Increment/decrement amount for D
+PID_P_DELTA = 0.25         # Increment/decrement amount for P
+
+# Button assignments (joystick or web UI)
+SAVE_PATH_BTN = "circle"        # Save current path
+LOAD_PATH_BTN = "x"             # Load saved path
+RESET_ORIGIN_BTN = "square"     # Reset origin to current position
+ERASE_PATH_BTN = "triangle"     # Clear path from memory
+TOGGLE_RECORDING_BTN = "option" # Toggle recording on/off
+INC_PID_D_BTN = None            # Increase D parameter
+DEC_PID_D_BTN = None            # Decrease D parameter  
+INC_PID_P_BTN = "R2"            # Increase P parameter
+DEC_PID_P_BTN = "L2"            # Decrease P parameter
+```
+
+From `donkeycar/templates/cfg_path_follow.py:637-675`.
+
+## Position Sources
+
+### GPS
+
+```python
+HAVE_GPS = True
+GPS_SERIAL = '/dev/ttyUSB0'
+GPS_SERIAL_BAUDRATE = 115200
+GPS_NMEA_PATH = "nmea.csv"  # Record NMEA for replay
+GPS_DEBUG = False
+```
+
+### Intel RealSense T265
+
+```python
+HAVE_T265 = True
+REALSENSE_T265_ID = None  # Auto-detect or specify serial
+WHEEL_ODOM_CALIB = "calibration_odometry.json"
+```
+
+### Wheel Encoders
+
+```python
+HAVE_ODOM = True
+ENCODER_PPR = 20
+MM_PER_TICK = 9.9  # Measure by rolling 1 meter
+```
+
+See [kinematics](/advanced/kinematics) for encoder setup.
+
+## Path Recording
+
+The `CsvThrottlePath` part records waypoints:
+
+```python
+from donkeycar.parts.path import CsvThrottlePath
+
+# Create path recorder
+path = CsvThrottlePath(min_dist=cfg.PATH_MIN_DIST)
+
+# Add to vehicle
+V.add(path,
+      inputs=['recording', 'pos/x', 'pos/y', 'user/throttle'],
+      outputs=['path', 'throttles'])
+```
+
+From `donkeycar/templates/path_follow.py:203-204`.
+
+### Implementation
+
+From `donkeycar/parts/path.py:80-94`:
+
+```python
+class CsvThrottlePath(AbstractPath):
+    def __init__(self, min_dist: float = 1.0) -> None:
+        super().__init__(min_dist)
+        self.throttles = []
+
+    def run(self, recording: bool, x: float, y: float, throttle: float) -> tuple:
+        if recording:
+            d = dist(x, y, self.x, self.y)
+            if d > self.min_dist:
+                logging.info(f"path point: ({x},{y}) throttle: {throttle}")
+                self.path.append((x, y))
+                self.throttles.append(throttle)
+                self.x = x
+                self.y = y
+        return self.path, self.throttles
+```
+
+### Save and Load
+
+```python
+def save_path():
+    if path.length() > 0:
+        if path.save(cfg.PATH_FILENAME):
+            print("Path saved to", cfg.PATH_FILENAME)
+
+def load_path():
+    if os.path.exists(cfg.PATH_FILENAME):
+        if path.load(cfg.PATH_FILENAME):
+            print("Path loaded from", cfg.PATH_FILENAME)
+
+def erase_path():
+    if path.reset():
+        print("Path erased and origin reset")
+```
+
+From `donkeycar/templates/path_follow.py:221-252`.
+
+Path file format (CSV):
+```csv
+0.0, 0.0, 0.5
+0.3, 0.1, 0.5
+0.6, 0.2, 0.6
+1.0, 0.4, 0.6
+```
+
+Each line: `x, y, throttle`
+
+## Cross-Track Error
+
+The `CTE` part calculates distance from path:
+
+```python
+from donkeycar.parts.path import CTE
+
+# Create CTE calculator
+cte = CTE(
+    look_ahead=cfg.PATH_LOOK_AHEAD,
+    look_behind=cfg.PATH_LOOK_BEHIND,
+    num_pts=cfg.PATH_SEARCH_LENGTH
+)
+
+# Add to vehicle (runs only in autopilot)
+V.add(cte,
+      inputs=['path', 'pos/x', 'pos/y', 'cte/closest_pt'],
+      outputs=['cte/error', 'cte/closest_pt'],
+      run_condition='run_pilot')
+```
+
+From `donkeycar/templates/path_follow.py:280-281`.
+
+### Algorithm
+
+From `donkeycar/parts/path.py:406-432`:
+
+```python
+def run(self, path, x, y, from_pt=None):
+    """Calculate cross-track error"""
+    cte = 0.
+    i = from_pt
+
+    # Find nearest track segment
+    a, b, i = self.nearest_track(path, x, y, 
+                                  look_ahead=self.look_ahead,
+                                  look_behind=self.look_behind, 
+                                  from_pt=from_pt,
+                                  num_pts=self.num_pts)
+    
+    if a and b:
+        # Create line from segment
+        a_v = Vec3(a[0], 0., a[1])
+        b_v = Vec3(b[0], 0., b[1])
+        p_v = Vec3(x, 0., y)
+        line = Line3D(a_v, b_v)
+        
+        # Calculate perpendicular distance
+        err = line.vector_to(p_v)
+        sign = 1.0
+        cp = line.dir.cross(err.normalized())
+        if cp.y > 0.0:
+            sign = -1.0
+        cte = err.mag() * sign
+            
+    return cte, i
+```
+
+Positive CTE means right of path, negative means left.
+
+## PID Control
+
+The `PID_Pilot` converts CTE to steering:
+
+```python
+from donkeycar.parts.path import PID_Pilot
+from donkeycar.parts.transform import PIDController
+
+# Create PID controller
+pid = PIDController(p=cfg.PID_P, i=cfg.PID_I, d=cfg.PID_D)
+
+# Create pilot
+pilot = PID_Pilot(
+    pid,
+    throttle=cfg.PID_THROTTLE,
+    use_constant_throttle=cfg.USE_CONSTANT_THROTTLE,
+    min_throttle=cfg.PID_THROTTLE
+)
+
+# Add to vehicle
+V.add(pilot,
+      inputs=['cte/error', 'throttles', 'cte/closest_pt'],
+      outputs=['pilot/steering', 'pilot/throttle'],
+      run_condition='run_pilot')
+```
+
+From `donkeycar/templates/path_follow.py:284-286`.
+
+### Implementation
+
+From `donkeycar/parts/path.py:435-458`:
+
+```python
+class PID_Pilot:
+    def __init__(self, pid: PIDController, throttle: float,
+                 use_constant_throttle: bool = False,
+                 min_throttle: float = None):
+        self.pid = pid
+        self.throttle = throttle
+        self.use_constant_throttle = use_constant_throttle
+        self.min_throttle = min_throttle if min_throttle else throttle
+
+    def run(self, cte: float, throttles: list, closest_pt_idx: int) -> tuple:
+        # Calculate steering from PID
+        steer = self.pid.run(cte)
+        
+        # Choose throttle mode
+        if self.use_constant_throttle or throttles is None:
+            throttle = self.throttle
+        elif throttles[closest_pt_idx] < self.min_throttle:
+            throttle = self.min_throttle
+        else:
+            throttle = throttles[closest_pt_idx]
+            
+        return steer, throttle
+```
+
+## PID Tuning
+
+Adjust PID parameters in real-time:
+
+```python
+def dec_pid_d():
+    pid.Kd -= cfg.PID_D_DELTA
+    logging.info(f"pid: d- {pid.Kd}")
+
+def inc_pid_d():
+    pid.Kd += cfg.PID_D_DELTA
+    logging.info(f"pid: d+ {pid.Kd}")
+
+def dec_pid_p():
+    pid.Kp -= cfg.PID_P_DELTA
+    logging.info(f"pid: p- {pid.Kp}")
+
+def inc_pid_p():
+    pid.Kp += cfg.PID_P_DELTA
+    logging.info(f"pid: p+ {pid.Kp}")
+
+# Bind to buttons
+if cfg.INC_PID_D_BTN:
+    ctr.set_button_down_trigger(cfg.INC_PID_D_BTN, inc_pid_d)
+if cfg.DEC_PID_D_BTN:
+    ctr.set_button_down_trigger(cfg.DEC_PID_D_BTN, dec_pid_d)
+if cfg.INC_PID_P_BTN:
+    ctr.set_button_down_trigger(cfg.INC_PID_P_BTN, inc_pid_p)
+if cfg.DEC_PID_P_BTN:
+    ctr.set_button_down_trigger(cfg.DEC_PID_P_BTN, dec_pid_p)
+```
+
+From `donkeycar/templates/path_follow.py:288-388`.
+
+### Tuning Guidelines
+
+**P (Proportional)**
+- Controls steering strength in response to error
+- Too high: oscillation and overshoot
+- Too low: slow response, large tracking error
+- Start: -0.5, adjust by ±0.25
+
+**I (Integral)**
+- Eliminates steady-state error
+- Usually keep at 0 for path following
+- Can cause instability if too high
+
+**D (Derivative)**  
+- Dampens oscillation and overshoot
+- Too high: sensitive to noise
+- Too low: overshoot and oscillation
+- Start: -0.3, adjust by ±0.25
+
+## Visualization
+
+Display path on web interface:
+
+```python
+from donkeycar.parts.path import PImage, PathPlot, PlotCircle
+
+# Create map image
+img = PImage(clear_each_frame=True)
+V.add(img, outputs=['map/image'])
+
+# Plot recorded path
+plot = PathPlot(scale=cfg.PATH_SCALE, offset=cfg.PATH_OFFSET)
+V.add(plot,
+      inputs=['map/image', 'path'],
+      outputs=['map/image'])
+
+# Plot current position (green in user mode, blue in pilot mode)
+loc_plot = PlotCircle(scale=cfg.PATH_SCALE, offset=cfg.PATH_OFFSET, color="green")
+V.add(loc_plot,
+      inputs=['map/image', 'pos/x', 'pos/y'],
+      outputs=['map/image'],
+      run_condition='run_user')
+
+loc_plot = PlotCircle(scale=cfg.PATH_SCALE, offset=cfg.PATH_OFFSET, color="blue")
+V.add(loc_plot,
+      inputs=['map/image', 'pos/x', 'pos/y'],
+      outputs=['map/image'],
+      run_condition='run_pilot')
+```
+
+From `donkeycar/templates/path_follow.py:270-438`.
+
+## Origin Reset
+
+Handle coordinate system drift:
+
+```python
+from donkeycar.parts.path import OriginOffset
+
+# Create origin offset handler
+origin_reset = OriginOffset(cfg.PATH_DEBUG)
+
+# Add to vehicle
+V.add(origin_reset,
+      inputs=['pos/x', 'pos/y', 'cte/closest_pt'],
+      outputs=['pos/x', 'pos/y', 'cte/closest_pt'])
+
+def reset_origin():
+    """Reset effective pose to (0, 0)"""
+    origin_reset.reset_origin()
+    print("Origin reset to current position")
+
+# Bind to button
+if cfg.RESET_ORIGIN_BTN:
+    ctr.set_button_down_trigger(cfg.RESET_ORIGIN_BTN, reset_origin)
+```
+
+From `donkeycar/templates/path_follow.py:189-263`.
+
+This allows repositioning the car at the start point without restarting.
+
+## Complete Example
+
+Typical path following workflow:
+
+```bash
+# 1. Start manage.py with path following template
+donkey createcar --path ~/mycar --template path_follow
+cd ~/mycar
+
+# 2. Configure GPS or odometry in myconfig.py
+
+# 3. Start driving
+python manage.py drive --js
+
+# 4. Record path:
+#    - Enable recording (triangle button or web UI)
+#    - Drive desired path
+#    - Press SAVE_PATH_BTN (circle) to save
+
+# 5. Test autonomous:
+#    - Press RESET_ORIGIN_BTN (square)
+#    - Place car at start
+#    - Switch to autopilot mode
+#    - Car follows recorded path
+
+# 6. Tune PID:
+#    - Use INC/DEC_PID_P/D buttons (R2/L2)
+#    - Observe path tracking
+#    - Iterate until smooth
+```
+
+## Advanced Features
+
+### GPS Playback
+
+Replay GPS NMEA sentences for testing:
+
+```python
+GPS_NMEA_PATH = "nmea.csv"
+
+# Records NMEA during user mode
+# Replays during autopilot mode
+```
+
+From `donkeycar/templates/path_follow.py:463-469`.
+
+### Search Optimization
+
+Limit search range for performance:
+
+```python
+PATH_SEARCH_LENGTH = 10  # Only search nearby points
+# Prevents matching wrong section on crossing paths
+```
+
+### Variable Throttle
+
+Replay recorded throttle values:
+
+```python
+USE_CONSTANT_THROTTLE = False
+# Slows for curves, speeds for straights
+# Uses recorded throttle profile
+```
+
+## Best Practices
+
+1. **Close the loop** - Make start and end points close
+2. **Smooth driving** - Record at steady speed for best results
+3. **Tune progressively** - Start with low gains, increase slowly
+4. **Test in stages** - Verify recording, then test following
+5. **Monitor CTE** - Enable logging to debug tracking issues
+6. **Reset origin** - If coordinates drift, reset before running
+
+## Troubleshooting
+
+### Path Not Saving
+
+```python
+# Check path has waypoints
+if path.length() == 0:
+    print("No waypoints recorded")
+
+# Verify PATH_FILENAME is writable
+PATH_FILENAME = "donkey_path.csv"
+```
+
+### Poor Tracking
+
+- Increase P gain for stronger correction
+- Increase D gain to reduce oscillation
+- Lower throttle to allow more reaction time
+- Verify position source accuracy
+
+### Oscillation
+
+- Decrease P gain
+- Increase D gain  
+- Lower throttle
+- Increase PATH_LOOK_AHEAD
+
+### Wrong Path Section
+
+- Decrease PATH_SEARCH_LENGTH
+- Avoid crossing paths
+- Use RESET_ORIGIN at start
+
+## Next Steps
+
+- Use [kinematics](/advanced/kinematics) for encoder-based positioning
+- Add [telemetry](/advanced/telemetry) to monitor CTE and PID values
+- Test in [simulator](/advanced/simulator) before real-world deployment

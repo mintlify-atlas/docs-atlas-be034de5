@@ -1,0 +1,145 @@
+---
+title: Parts Overview
+description: Understanding the Donkeycar parts architecture and library
+---
+
+## What are Parts?
+
+Parts are the building blocks of a Donkeycar vehicle. They represent modular, reusable components that handle specific functions like cameras, motors, sensors, and AI models. Parts follow a standardized interface that makes them easy to compose into a complete autonomous vehicle.
+
+## The Parts Interface
+
+Every Donkeycar part implements a simple interface:
+
+### Basic Methods
+
+- **`run()`** - Called in the vehicle loop to execute the part's logic synchronously
+- **`run_threaded()`** - Returns cached values from a background thread
+- **`update()`** - Runs continuously in a background thread to update cached values
+- **`shutdown()`** - Cleanup when the vehicle stops
+
+### Part Types
+
+**Synchronous Parts**: Simple parts that execute in the main vehicle loop
+```python
+class SimplePart:
+    def run(self, input_value):
+        # Process input and return output
+        return output_value
+```
+
+**Threaded Parts**: Parts that run continuously in the background
+```python
+class ThreadedPart:
+    def __init__(self):
+        self.value = None
+    
+    def update(self):
+        # Runs in background thread
+        while self.on:
+            self.value = self.read_sensor()
+    
+    def run_threaded(self):
+        # Returns cached value
+        return self.value
+    
+    def shutdown(self):
+        self.on = False
+```
+
+## Using Parts in Your Vehicle
+
+Parts are added to the vehicle in `manage.py`:
+
+```python
+from donkeycar import Vehicle
+from donkeycar.parts.camera import PiCamera
+from donkeycar.parts.actuator import PulseController, PWMSteering, PWMThrottle
+
+# Create vehicle
+V = Vehicle()
+
+# Add camera
+cam = PiCamera(image_w=160, image_h=120)
+V.add(cam, outputs=['cam/image_array'], threaded=True)
+
+# Add steering
+steering_controller = PulseController(...)
+steering = PWMSteering(controller=steering_controller, ...)
+V.add(steering, inputs=['user/angle'])
+
+# Add throttle
+throttle_controller = PulseController(...)
+throttle = PWMThrottle(controller=throttle_controller, ...)
+V.add(throttle, inputs=['user/throttle'])
+```
+
+## The Parts Library
+
+Donkeycar includes a comprehensive library of parts:
+
+### Input Parts
+- **Cameras**: Image capture from various cameras
+- **Controllers**: Joystick and web-based control
+- **Sensors**: IMU, GPS, encoders, ultrasonic
+
+### Output Parts
+- **Actuators**: Motor controllers and servos
+- **Indicators**: LEDs, displays, sound
+
+### Processing Parts
+- **Models**: Keras and PyTorch neural networks
+- **Computer Vision**: Image processing and transformation
+- **Filters**: Throttle filters, smoothing
+
+### Data Parts
+- **Data Stores**: Recording and playback (Tub format)
+- **Telemetry**: Logging and monitoring
+
+## Part Communication
+
+Parts communicate through the vehicle's memory:
+
+```python
+# Camera outputs to 'cam/image_array'
+V.add(cam, outputs=['cam/image_array'])
+
+# Model reads 'cam/image_array', outputs control signals
+V.add(model, inputs=['cam/image_array'], 
+      outputs=['pilot/angle', 'pilot/throttle'])
+
+# Actuators read control signals
+V.add(steering, inputs=['pilot/angle'])
+V.add(throttle, inputs=['pilot/throttle'])
+```
+
+## Creating Custom Parts
+
+See [Custom Parts](/parts/custom-parts) for a complete guide to building your own parts.
+
+## Part Lifecycle
+
+1. **Initialization**: Parts are created with configuration parameters
+2. **Addition to Vehicle**: Parts are added to the vehicle with inputs/outputs defined
+3. **Start**: Vehicle starts, threaded parts begin their update loops
+4. **Run Loop**: Vehicle loop calls `run()` or `run_threaded()` on each part
+5. **Shutdown**: Vehicle stops, parts clean up resources
+
+## Best Practices
+
+- **Keep parts simple**: Each part should have a single, well-defined responsibility
+- **Use threading wisely**: Only use threaded parts for I/O-bound operations
+- **Handle errors gracefully**: Parts should handle exceptions and provide useful error messages
+- **Document your parts**: Include docstrings with parameter descriptions and usage examples
+- **Make parts configurable**: Use constructor parameters for configuration rather than hardcoding values
+
+## Next Steps
+
+- Explore specific part categories:
+  - [Cameras](/parts/cameras) - Image capture
+  - [Controllers](/parts/controllers) - User input
+  - [Actuators](/parts/actuators) - Motors and servos
+  - [Sensors](/parts/sensors) - IMU, GPS, encoders
+  - [Models](/parts/keras-models) - AI pilots
+  - [Data Stores](/parts/data-stores) - Recording data
+- Learn to [create custom parts](/parts/custom-parts)
