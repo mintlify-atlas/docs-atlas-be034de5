@@ -1,0 +1,243 @@
+---
+title: donkey models
+description: View the model training database and history
+---
+
+The `donkey models` command displays a database of your trained models, showing training history, tub data used, and performance metrics.
+
+## Usage
+
+```bash
+cd ~/mycar
+donkey models [--config <path>] [--group]
+```
+
+## Arguments
+
+<ParamField path="--config" type="string" default="./config.py">
+  Path to your config.py file
+</ParamField>
+
+<ParamField path="--group" type="boolean" default="false">
+  Group tubs and plot them separately in the output
+</ParamField>
+
+## Description
+
+Donkeycar maintains a database of your training history in the `models/` directory. The `models` command displays:
+
+- **Pilot information** - Model names, types, timestamps
+- **Training tubs** - Which data was used to train each model
+- **Performance metrics** - Loss values, training duration
+- **Model relationships** - Transfer learning lineage
+
+## Example Output
+
+```bash
+cd ~/mycar
+donkey models
+```
+
+**Output:**
+```
+┌──────────────────────┬─────────────┬────────────┬──────────────┬─────────┐
+│ Name                 │ Type        │ Tubs       │ Date         │ Loss    │
+├──────────────────────┼─────────────┼────────────┼──────────────┼─────────┤
+│ mypilot_22-01-15.h5  │ linear      │ 1,2,3      │ 2022-01-15   │ 0.0345  │
+│ fast_22-01-16.h5     │ categorical │ 1,2,3,4    │ 2022-01-16   │ 0.0289  │
+│ track2_22-01-17.h5   │ linear      │ 5,6        │ 2022-01-17   │ 0.0412  │
+└──────────────────────┴─────────────┴────────────┴──────────────┴─────────┘
+
+┌──────────────────────┬────────────┬──────────┬─────────────┐
+│ Tub                  │ Records    │ Date     │ Size        │
+├──────────────────────┼────────────┼──────────┼─────────────┤
+│ tub_1_22-01-10       │ 2,341      │ 01-10    │ 1.2 GB      │
+│ tub_2_22-01-11       │ 1,892      │ 01-11    │ 890 MB      │
+│ tub_3_22-01-12       │ 3,105      │ 01-12    │ 1.5 GB      │
+└──────────────────────┴────────────┴──────────┴─────────────┘
+```
+
+## Use Cases
+
+### 1. Track Training Progress
+
+See which models you've trained and when:
+
+```bash
+donkey models
+```
+
+Helps you:
+- Remember which model performed best
+- Track training experiments
+- See which data was used for each model
+
+### 2. Audit Data Usage
+
+Verify which tubs contributed to each model:
+
+```bash
+donkey models --group
+```
+
+Useful for:
+- Ensuring balanced training data
+- Tracking down data quality issues
+- Understanding model behavior based on training data
+
+### 3. Model Management
+
+Identify old models to delete:
+
+```bash
+donkey models
+# Review output, then:
+rm models/old_model_22-01-10.h5
+```
+
+## Database Location
+
+The model database is stored in:
+```
+~/mycar/models/
+  ├── database.json         # Training history
+  ├── mypilot_22-01-15.h5  # Model files
+  └── ...
+```
+
+## Information Displayed
+
+### Pilot Table
+
+- **Name** - Model filename
+- **Type** - Model architecture (linear, categorical, lstm, etc.)
+- **Tubs** - Comma-separated list of tub indices used in training
+- **Date** - Training date
+- **Loss** - Final validation loss (lower is better)
+- **Val Loss** - Validation set loss
+- **Transfer** - Parent model if using transfer learning
+- **Comment** - User comment added during training
+
+### Tub Table
+
+- **Tub** - Tub directory name
+- **Records** - Number of data records
+- **Date** - Collection date
+- **Size** - Disk space used
+- **Sessions** - Number of recording sessions
+
+## Using --group Flag
+
+```bash
+donkey models --group
+```
+
+The `--group` flag organizes the output by grouping tubs together that were used in the same training runs. This makes it easier to see training patterns and data relationships.
+
+## Model Database Schema
+
+The `database.json` file stores training metadata:
+
+```json
+{
+  "pilots": [
+    {
+      "name": "mypilot_22-01-15.h5",
+      "type": "linear",
+      "tubs": ["tub_1", "tub_2", "tub_3"],
+      "date": "2022-01-15T10:30:00",
+      "loss": 0.0345,
+      "val_loss": 0.0389,
+      "transfer": null,
+      "comment": "First working model"
+    }
+  ],
+  "tubs": [
+    {
+      "path": "./data/tub_1_22-01-10",
+      "records": 2341,
+      "date": "2022-01-10"
+    }
+  ]
+}
+```
+
+## Adding Comments to Models
+
+When training, add comments to track experiments:
+
+```bash
+donkey train --tub ./data --model ./models/mypilot.h5 \
+  --comment "Trained on straight sections only"
+```
+
+Comments appear in the database and help you remember model purposes.
+
+## Troubleshooting
+
+<Accordion title="No models found">
+If the command shows no models:
+
+- Ensure you're in your car directory: `cd ~/mycar`
+- Check models directory exists: `ls models/`
+- Train a model first with [`donkey train`](/cli/train)
+- Database might be corrupted, check `models/database.json`
+</Accordion>
+
+<Accordion title="Database file not found">
+If `database.json` is missing:
+
+- The database is created during training
+- Train a new model to recreate it
+- Or create empty database: `echo '{"pilots": [], "tubs": []}' > models/database.json`
+</Accordion>
+
+<Accordion title="Incorrect or missing information">
+If database information is wrong:
+
+- The database is updated during training, not retroactively
+- Old models trained before database feature won't appear
+- You can manually edit `models/database.json` (valid JSON required)
+</Accordion>
+
+## Related Commands
+
+- [`donkey train`](/cli/train) - Train models (creates database entries)
+- [`donkey tubplot`](/cli/tubplot) - Compare model predictions
+- [`donkey makemovie`](/cli/makemovie) - Visualize model performance
+
+## Tips
+
+<Tip>
+**Name models descriptively** - Use meaningful names that indicate track, date, or purpose:
+```bash
+donkey train --tub ./data --model models/track2_fast_22-01-15.h5
+```
+</Tip>
+
+<Tip>
+**Clean old models regularly** - Delete underperforming models to save space:
+```bash
+donkey models  # review performance
+rm models/bad_model.h5  # delete poor performers
+```
+</Tip>
+
+<Tip>
+**Track experiments** - Always add comments when trying new architectures or training strategies:
+```bash
+--comment "LSTM with 128 units, dropout 0.2"
+```
+</Tip>
+
+## Source Code
+
+Implemented in:
+- `donkeycar/management/base.py:573-592` - CLI command
+- `donkeycar/pipeline/database.py` - PilotDatabase class
+
+## Further Reading
+
+- [Training Documentation](/training/deep-learning)
+- [Model Architectures](/parts/keras-models)
+- [Data Management](/training/data-collection)

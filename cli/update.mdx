@@ -1,0 +1,226 @@
+---
+title: donkey update
+description: Update car files to the latest template version
+---
+
+The `donkey update` command updates your car's core files (`manage.py`, `config.py`, etc.) to match the latest version of the Donkeycar templates.
+
+## Usage
+
+```bash
+cd ~/mycar
+donkey update [--template <template_name>]
+```
+
+<Warning>
+**This command overwrites files!** Your `myconfig.py` is safe, but `manage.py`, `config.py`, `train.py`, and `calibrate.py` will be replaced with the latest versions from the template.
+</Warning>
+
+## Arguments
+
+<ParamField path="--template" type="string" default="complete">
+  Name of the template to update from. Options: complete, basic, path_follow, cv_control, simulator
+</ParamField>
+
+## Description
+
+When you update the Donkeycar library with `pip install --upgrade donkeycar`, your car application files don't automatically update. The `update` command synchronizes your car files with the newer template.
+
+**What gets updated:**
+- `manage.py` - Main vehicle script
+- `config.py` - Default configuration
+- `train.py` - Training script  
+- `calibrate.py` - Calibration script
+
+**What stays safe:**
+- `myconfig.py` - Your custom settings (never overwritten)
+- `data/` - Your training data
+- `models/` - Your trained models
+- `logs/` - Log files
+
+## When to Use Update
+
+Run `donkey update` when:
+
+1. **After upgrading Donkeycar** - Sync your car to use new features
+   ```bash
+   pip install --upgrade donkeycar
+   cd ~/mycar
+   donkey update
+   ```
+
+2. **Breaking changes in new version** - Ensure compatibility
+3. **Bug fixes in templates** - Get fixes to vehicle loop, data collection, etc.
+4. **New template features** - Access new parts, modes, or capabilities
+5. **Switching templates** - Change from one template type to another
+
+## Example Usage
+
+### Update to Latest Complete Template
+
+```bash
+cd ~/mycar
+donkey update --template complete
+```
+
+### Switch from Basic to Complete Template
+
+```bash
+cd ~/mycar
+donkey update --template complete
+```
+
+This will replace your basic template files with the full-featured complete template.
+
+### Update After Upgrading Donkeycar
+
+```bash
+# Upgrade the library
+pip install --upgrade donkeycar
+
+# Update car files
+cd ~/mycar
+donkey update
+```
+
+## How It Works
+
+1. **Detects current directory** - Must be run from your car directory (e.g., `~/mycar`)
+2. **Copies template files** - Overwrites core files with `--overwrite=True`
+3. **Preserves myconfig.py** - Your customizations remain intact
+4. **Preserves data** - All data, models, and logs stay untouched
+
+## Before You Update
+
+<Steps>
+  <Step title="Backup your files">
+    If you modified `manage.py` or other core files, back them up first:
+    ```bash
+    cp manage.py manage.py.backup
+    cp config.py config.py.backup
+    ```
+  </Step>
+  
+  <Step title="Check your modifications">
+    Review what you changed in core files:
+    ```bash
+    git diff manage.py  # if using git
+    # or
+    diff manage.py manage.py.backup
+    ```
+  </Step>
+  
+  <Step title="Note your custom code">
+    If you added custom parts or logic to `manage.py`, you'll need to re-add them after the update.
+  </Step>
+</Steps>
+
+## After You Update
+
+<Steps>
+  <Step title="Review changes">
+    Check what changed in the new files:
+    ```bash
+    cat manage.py  # review the new code
+    ```
+  </Step>
+  
+  <Step title="Merge custom code">
+    If you had custom parts or modifications, add them back to the new `manage.py`.
+  </Step>
+  
+  <Step title="Update myconfig.py if needed">
+    New versions may add new config options. Check `config.py` for new settings and add them to `myconfig.py` if desired.
+  </Step>
+  
+  <Step title="Test your car">
+    Verify everything still works:
+    ```bash
+    python manage.py drive
+    ```
+  </Step>
+</Steps>
+
+## Best Practices
+
+<Tip>
+**Use version control** - Keep your car directory in git. This makes it easy to see what `update` changed and revert if needed:
+
+```bash
+cd ~/mycar
+git init
+git add .
+git commit -m "Before update"
+donkey update
+git diff  # see what changed
+```
+</Tip>
+
+<Tip>
+**Keep customizations in myconfig.py** - Instead of modifying `config.py`, override settings in `myconfig.py`. This makes updates seamless.
+</Tip>
+
+<Tip>
+**Minimize manage.py changes** - Put custom parts in separate files and import them, rather than editing `manage.py` directly.
+</Tip>
+
+## Troubleshooting
+
+<Accordion title="Command fails with 'not a directory' error">
+You must run `donkey update` from inside your car directory:
+
+```bash
+cd ~/mycar  # or wherever your car is
+donkey update
+```
+</Accordion>
+
+<Accordion title="Lost my custom code">
+If you had custom code in `manage.py` that got overwritten:
+
+1. Check your backup: `manage.py.backup`
+2. Or restore from git: `git checkout HEAD~1 manage.py`
+3. Manually merge your changes into the new file
+4. Consider putting custom parts in separate files next time
+</Accordion>
+
+<Accordion title="New config options don't appear">
+`myconfig.py` is never overwritten by update. New config options appear in `config.py` only. To use them:
+
+1. Open `config.py` and find the new settings
+2. Copy them to `myconfig.py` with your desired values
+3. Settings in `myconfig.py` override those in `config.py`
+</Accordion>
+
+<Accordion title="Car won't start after update">
+If your car won't start after updating:
+
+1. Check for Python errors: `python manage.py drive`
+2. Verify virtual environment is activated
+3. Check that required parts are still available
+4. Review myconfig.py for incompatible settings
+5. Try rolling back: `git checkout HEAD~1`
+</Accordion>
+
+## Alternative: Manual Update
+
+Instead of using `donkey update`, you can manually copy files from the Donkeycar templates:
+
+```bash
+# Find Donkeycar installation
+python -c "import donkeycar; print(donkeycar.__file__)"
+# Output: /path/to/donkeycar/__init__.py
+
+# Copy templates manually
+cp /path/to/donkeycar/templates/complete.py ~/mycar/manage.py
+cp /path/to/donkeycar/templates/cfg_complete.py ~/mycar/config.py
+```
+
+## Related Commands
+
+- [`donkey createcar`](/cli/createcar) - Create a new car from scratch
+- [Creating Your Application](/guides/creating-application) - Initial car setup
+
+## Source Code
+
+Implemented in `donkeycar/management/base.py:143-157`

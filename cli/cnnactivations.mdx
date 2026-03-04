@@ -1,0 +1,224 @@
+---
+title: donkey cnnactivations
+description: Visualize convolutional neural network layer activations
+---
+
+The `donkey cnnactivations` command visualizes what each convolutional layer in your trained model "sees" when processing an image. This is useful for understanding and debugging your neural network.
+
+## Usage
+
+```bash
+donkey cnnactivations --image <path> --model <path> [--config <path>]
+```
+
+## Arguments
+
+<ParamField path="--image" type="string" required>
+  Path to the input image file to analyze. Can be an image from your tub data or any test image.
+</ParamField>
+
+<ParamField path="--model" type="string" required>
+  Path to your trained Keras model file (.h5 or .keras format).
+</ParamField>
+
+<ParamField path="--config" type="string" default="./config.py">
+  Path to your config.py file for image preprocessing settings.
+</ParamField>
+
+## Description
+
+This debugging tool extracts and visualizes the feature maps (activations) from each Conv2D layer in your CNN. It shows you:
+
+- What patterns each layer detects (edges, textures, shapes, etc.)
+- How information transforms as it flows through the network
+- Which layers are learning useful features vs. noise
+- Potential issues with model architecture or training
+
+## Example Usage
+
+```bash
+# Basic usage
+cd ~/mycar
+donkey cnnactivations --image ./data/tub_1/images/100_cam_image_array_.jpg --model ./models/mypilot.h5
+
+# With custom config
+donkey cnnactivations --image test_image.jpg --model models/lane_follower.h5 --config myconfig.py
+```
+
+## How It Works
+
+1. **Loads your model** - Opens the trained Keras model file
+2. **Processes the image** - Preprocesses the image using your config settings
+3. **Extracts activations** - Runs the image through each Conv2D layer
+4. **Visualizes feature maps** - Displays the activation patterns in a grid
+5. **Shows layer info** - Prints the shape of each layer's output
+
+## Understanding the Output
+
+The command opens matplotlib windows showing:
+
+### Layer 1 (Early layers)
+- Detect low-level features: edges, colors, gradients
+- Activations look similar to the input image
+- Example: Vertical edges of lane lines, horizontal track edges
+
+### Middle Layers
+- Detect mid-level features: corners, textures, patterns
+- Activations become more abstract
+- Example: Curved track sections, road surface texture
+
+### Deep Layers
+- Detect high-level features: complex shapes and semantic concepts
+- Activations are very abstract, less recognizable
+- Example: "This is a left turn" or "This is a straight section"
+
+## Use Cases
+
+### 1. Model Debugging
+
+Check if your model is learning the right features:
+
+```bash
+donkey cnnactivations --image bad_prediction.jpg --model models/pilot.h5
+```
+
+Look for:
+- Early layers not detecting lane lines → Need better data or augmentation
+- All layers showing noise → Model hasn't trained properly
+- Some layers inactive (all black) → Dead neurons, reduce learning rate
+
+### 2. Architecture Validation
+
+Compare different model architectures:
+
+```bash
+# Compare linear vs categorical model
+donkey cnnactivations --image test.jpg --model models/linear.h5
+donkey cnnactivations --image test.jpg --model models/categorical.h5
+```
+
+### 3. Understanding Predictions
+
+See what the model focuses on for specific predictions:
+
+```bash
+# Why did the model turn left here?
+donkey cnnactivations --image sharp_left.jpg --model models/mypilot.h5
+```
+
+## Interpreting Activations
+
+<Note>
+**Healthy activations** should show:
+- Clear, distinct patterns (not random noise)
+- Progressive abstraction from early to late layers  
+- Activation of multiple feature maps (not just a few)
+- Responses aligned with important image features (track, obstacles)
+</Note>
+
+<Warning>
+**Problem indicators:**
+- All activations look like noise → Poor training or wrong architecture
+- Only 1-2 feature maps active → Model underfitting, needs more capacity
+- No activation in late layers → Dying ReLU problem or training issue
+- Activations ignore track → Bad data or wrong input preprocessing
+</Warning>
+
+## Requirements
+
+This command requires:
+
+- **TensorFlow/Keras** - Model must be in Keras format
+- **matplotlib** - For visualization (installed with `donkeycar[pc]`)
+- **GUI display** - Cannot run headless, needs X11/display
+
+<CodeGroup>
+```bash Install dependencies
+pip install tensorflow matplotlib
+```
+
+```bash For remote servers (X11 forwarding)
+ssh -X pi@your-car-ip
+# or use X11 forwarding from your SSH client
+```
+</CodeGroup>
+
+## Troubleshooting
+
+<Accordion title="ImportError: No module named tensorflow">
+Install TensorFlow:
+```bash
+pip install tensorflow==2.15.*
+```
+
+Or install the PC extras:
+```bash
+pip install donkeycar[pc]
+```
+</Accordion>
+
+<Accordion title="No display available">
+This command requires a graphical display. Options:
+
+1. Run on your local machine (not SSH)
+2. Use X11 forwarding: `ssh -X user@host`  
+3. Use VNC to access the car with a GUI
+4. Export DISPLAY variable if using remote X server
+</Accordion>
+
+<Accordion title="Model layer not found">
+If you get `KeyError: 'img_in'`:
+
+- Your model must have an input layer named 'img_in'
+- This is standard for Donkeycar models
+- If using a custom model, ensure input layer naming matches
+</Accordion>
+
+<Accordion title="All activations are black">
+If all activations appear black or empty:
+
+- Check image path is correct and image loads
+- Verify image dimensions match model input (default 160x120x3)
+- Ensure model is trained (not random weights)
+- Try a different image from your training data
+</Accordion>
+
+## Advanced Usage
+
+### Comparing Multiple Images
+
+Create a script to batch visualize:
+
+```python
+import subprocess
+images = ['straight.jpg', 'left_turn.jpg', 'right_turn.jpg']
+for img in images:
+    subprocess.run(['donkey', 'cnnactivations', 
+                   '--image', img, 
+                   '--model', 'models/pilot.h5'])
+```
+
+### Saving Activation Plots
+
+Modify the source code to save instead of display:
+```python
+# In donkeycar/management/base.py, ShowCnnActivations.create_figure()
+# Add before plt.show():
+plt.savefig(f'activations_layer_{i}.png')
+```
+
+## Related Tools
+
+- [`donkey train`](/cli/train) - Train the models you're analyzing
+- [`donkey tubplot`](/cli/tubplot) - Plot model predictions vs ground truth
+- [`donkey makemovie`](/cli/makemovie) - Create videos with saliency maps
+
+## Further Reading
+
+- [Understanding CNNs](https://cs231n.github.io/understanding-cnn/)
+- [Feature Visualization](https://distill.pub/2017/feature-visualization/)
+- [Donkeycar Model Architectures](/parts/keras-models)
+
+## Source Code
+
+Implemented in `donkeycar/management/base.py:366-435`

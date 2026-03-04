@@ -1,0 +1,168 @@
+---
+title: donkey createjs
+description: Create a custom joystick/gamepad configuration
+---
+
+The `donkey createjs` command launches an interactive tool to create a custom button and axis mapping for your game controller or joystick.
+
+## Usage
+
+```bash
+donkey createjs
+```
+
+## Description
+
+This interactive command helps you map your game controller's buttons and axes to Donkeycar controls. It's useful when:
+
+- You have a controller that isn't pre-configured (not PS3, PS4, Xbox, etc.)
+- You want to customize the default button mappings
+- You're using a specialty controller or joystick
+- Your controller layout differs from the standard mappings
+
+## How It Works
+
+The command launches an interactive session that:
+
+1. **Detects your controller** - Identifies connected game controllers
+2. **Maps buttons** - Prompts you to press buttons for each function
+3. **Maps axes** - Prompts you to move sticks/triggers for steering and throttle
+4. **Saves configuration** - Writes the mapping to a JSON file
+
+## Interactive Mapping Process
+
+When you run the command, you'll be prompted to:
+
+1. Press the button for each control function:
+   - Throttle increase/decrease
+   - Steering left/right
+   - Mode switching (user, autopilot)
+   - Recording toggle
+   - Emergency stop
+
+2. Move the axes for analog controls:
+   - Steering axis (usually left stick horizontal)
+   - Throttle axis (usually triggers or right stick vertical)
+
+3. Identify any gyroscope axes to ignore
+
+## Output File
+
+The command generates a JSON configuration file that maps your controller's physical inputs to Donkeycar functions. This file is saved and can be loaded by the controller part.
+
+**Example configuration structure:**
+```json
+{
+  "buttons": {
+    "0": "toggle_mode",
+    "1": "emergency_stop",
+    "2": "increase_throttle",
+    "3": "decrease_throttle"
+  },
+  "axes": {
+    "0": "steering",
+    "1": "throttle"
+  }
+}
+```
+
+## Using Your Custom Configuration
+
+After creating your joystick configuration:
+
+1. **Note the output file path** - The command tells you where the config was saved
+
+2. **Update myconfig.py** - Point to your custom configuration:
+   ```python
+   CONTROLLER_TYPE = 'custom'  # or your controller type
+   JOYSTICK_CONFIG_PATH = '/path/to/your/config.json'
+   ```
+
+3. **Test your mapping** - Start your car and verify the controls work correctly:
+   ```bash
+   cd ~/mycar
+   python manage.py drive
+   ```
+
+## Tips for Mapping
+
+<Tip>
+**Choose intuitive controls** - Map frequently used functions to easily accessible buttons. Common mappings:
+- Right trigger: Throttle (gas)
+- Left stick horizontal: Steering
+- A/X button: Toggle recording
+- B/Circle button: Emergency stop
+- Y/Triangle: Toggle autopilot mode
+</Tip>
+
+<Tip>
+**Test incrementally** - After mapping, test each control individually before driving to ensure everything works as expected.
+</Tip>
+
+<Note>
+If you make a mistake during mapping, you can run `donkey createjs` again to recreate the configuration.
+</Note>
+
+## Supported Controllers
+
+While Donkeycar has built-in support for common controllers (PS3, PS4, Xbox, Logitech F710), `createjs` allows you to use:
+
+- Generic USB game controllers
+- Flight joysticks
+- Racing wheels
+- Custom Arduino-based controllers
+- Any controller recognized by your operating system
+
+## Troubleshooting
+
+<Accordion title="Controller not detected">
+If your controller isn't detected:
+
+- Ensure it's properly connected (USB or Bluetooth paired)
+- Check that the controller works in other applications
+- On Linux, verify the controller appears in `/dev/input/`
+- Install required joystick libraries: `sudo apt-get install joystick jstest-gtk`
+- Test with `jstest /dev/input/js0`
+</Accordion>
+
+<Accordion title="Axes inverted or wrong direction">
+If steering or throttle goes the wrong direction:
+
+- You can manually edit the JSON file to add axis inversion
+- Or re-run `createjs` and map the axes carefully
+- Check the `JOYSTICK_STEERING_SCALE` and `JOYSTICK_THROTTLE_SCALE` in myconfig.py
+</Accordion>
+
+<Accordion title="Buttons don't respond">
+If buttons aren't working after mapping:
+
+- Verify the JSON file was created and has the correct path in myconfig.py
+- Check the controller type setting matches your configuration
+- Try using a pre-configured controller type first to verify the controller hardware works
+</Accordion>
+
+## Alternative: Pre-configured Controllers
+
+For common controllers, you don't need `createjs`. Just set the controller type in `myconfig.py`:
+
+```python
+# PS4 Controller
+CONTROLLER_TYPE = 'ps4'
+
+# Xbox One Controller
+CONTROLLER_TYPE = 'xbox'
+
+# Logitech F710
+CONTROLLER_TYPE = 'F710'
+```
+
+See the [Controllers documentation](/parts/controllers) for all pre-configured options.
+
+## Related Commands
+
+- [`donkey createcar`](/cli/createcar) - Create a car project that uses the controller
+- [`donkey calibrate`](/cli/calibrate) - Calibrate motors after setting up controls
+
+## Source Code
+
+Implemented in `donkeycar/management/joystick_creator.py`

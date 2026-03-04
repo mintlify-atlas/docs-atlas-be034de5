@@ -1,0 +1,108 @@
+---
+title: donkey findcar
+description: Find your Donkeycar on the network
+---
+
+The `donkey findcar` command helps you locate your Raspberry Pi-based Donkeycar on your local network by scanning for devices with Raspberry Pi MAC addresses.
+
+## Usage
+
+```bash
+donkey findcar
+```
+
+## Description
+
+This command performs a network scan to find Raspberry Pi devices on your local network. It's useful when you don't know the IP address of your car after booting it up or when the IP address has changed.
+
+## How It Works
+
+1. **Detects your computer's IP address** - Determines your local network IP
+2. **Scans the network** - Uses `nmap` to scan for devices on your subnet (/24 network)
+3. **Filters for Raspberry Pi** - Looks for MAC addresses starting with:
+   - `B8:27:EB` - Raspberry Pi 3 and earlier
+   - `DC:A6:32` - Raspberry Pi 4
+
+## Requirements
+
+<Warning>
+This command requires `nmap` to be installed on your system and may require sudo privileges.
+</Warning>
+
+**Install nmap:**
+
+<CodeGroup>
+```bash Ubuntu/Debian
+sudo apt-get install nmap
+```
+
+```bash macOS
+brew install nmap
+```
+
+```bash Windows
+# Download from https://nmap.org/download.html
+```
+</CodeGroup>
+
+## Example Output
+
+```
+Looking up your computer IP address...
+Your IP address: 192.168.1.100
+Finding your car's IP address...
+Your car's ip address is:
+192.168.1.150
+```
+
+## Connecting to Your Car
+
+Once you have the IP address, you can:
+
+1. **SSH into your car:**
+   ```bash
+   ssh pi@192.168.1.150
+   ```
+
+2. **Access the web interface:**
+   ```
+   http://192.168.1.150:8887
+   ```
+
+## Troubleshooting
+
+<Accordion title="No devices found">
+If no devices are found:
+
+- Ensure your car is powered on and connected to the same network
+- Check that your Raspberry Pi's WiFi is configured correctly
+- Verify nmap is installed: `which nmap`
+- Try running with sudo: `sudo nmap -sP 192.168.1.0/24`
+- Your Raspberry Pi might be using a different MAC address prefix (check with `ifconfig` on the Pi)
+</Accordion>
+
+<Accordion title="Command requires sudo">
+The nmap network scan typically requires elevated privileges. If you get permission errors, run the command with sudo or configure nmap to run without sudo.
+</Accordion>
+
+<Accordion title="Scan takes too long">
+The network scan can take 1-2 minutes depending on your network size. Be patient while it completes.
+</Accordion>
+
+## Alternative Methods
+
+If `findcar` doesn't work, try these alternatives:
+
+1. **Check your router's admin page** - Most routers list connected devices with their IP addresses
+2. **Use Angry IP Scanner** - A GUI tool for network scanning
+3. **Use a fixed IP** - Configure your Raspberry Pi to use a static IP address
+4. **mDNS/Bonjour** - If configured, you can access your Pi at `raspberrypi.local`
+
+## Related Commands
+
+- [`donkey createcar`](/cli/createcar) - Create a new car project
+- [`donkey calibrate`](/cli/calibrate) - Calibrate your car once you can connect to it
+
+## Source Code
+
+Implemented in `donkeycar/management/base.py:160-177`

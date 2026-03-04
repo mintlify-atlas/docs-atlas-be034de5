@@ -100,11 +100,16 @@
             "pages": [
               "cli/overview",
               "cli/createcar",
+              "cli/findcar",
               "cli/calibrate",
               "cli/train",
               "cli/makemovie",
               "cli/tubplot",
               "cli/tubhist",
+              "cli/createjs",
+              "cli/cnnactivations",
+              "cli/models",
+              "cli/update",
               "cli/ui"
             ]
           }
